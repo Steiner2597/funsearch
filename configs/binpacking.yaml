@@ -1,0 +1,37 @@
+# FunSearch Bin Packing 配置文件
+# 使用方法: python -m experiments.cli run configs/binpacking.yaml
+# 或使用启动脚本: python run.py
+
+run_id: "binpacking_demo_001"
+seed: 42
+max_generations: 20
+population_size: 50
+num_islands: 3
+top_k_for_full_eval: 10
+
+task_name: "bin_packing"
+
+evaluator:
+  # 数据集类型: "random" (随机生成) 或 "orlib" (OR-Library 标准测试集)
+  type: "random"
+  # 实例大小: "small" 或 "large"
+  # - random/small:  5-10个物品, 快速测试
+  # - random/large:  50-100个物品, 更真实
+  # - orlib/small:   前80个OR-Library实例 (binpack1-4)
+  # - orlib/large:   后80个OR-Library实例 (binpack5-8)
+  size: "small"
+  capacity: 100
+  seed: 42
+
+llm_providers:
+  - provider_id: "fake_generator"
+    provider_type: "fake"
+    model_name: "fake-model"
+    max_retries: 3
+    timeout_seconds: 30
+
+generator_provider_id: "fake_generator"
+refiner_provider_id: "fake_generator"
+
+artifact_dir: "artifacts"
+save_interval: 5

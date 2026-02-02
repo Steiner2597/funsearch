@@ -1,0 +1,47 @@
+# FunSearch Bin Packing - DeepSeek 配置
+# 使用方法: 
+#   python run.py                              # 默认配置 (随机数据集)
+#   python run.py --dataset orlib --size large # OR-Library 大型数据集
+#
+# 或直接运行:
+#   $env:DEEPSEEK_API_KEY = "sk-xxx"
+#   python -m experiments.cli run configs/binpacking_deepseek.yaml
+
+run_id: "binpacking_deepseek_002"
+seed: 42
+max_generations: 50
+population_size: 15
+num_islands: 3
+top_k_for_full_eval: 5
+
+task_name: "bin_packing"
+
+evaluator:
+  # 数据集类型: "random" (随机生成) 或 "orlib" (OR-Library 标准测试集)
+  type: "random"
+  # 实例大小: "small" 或 "large"
+  # - random/small:  5-10个物品, 快速测试
+  # - random/large:  50-100个物品, 更真实
+  # - orlib/small:   前80个OR-Library实例 (binpack1-4)
+  # - orlib/large:   后80个OR-Library实例 (binpack5-8)
+  size: "small"
+  capacity: 100
+  seed: 42
+
+llm_providers:
+  # DeepSeek API (兼容 OpenAI 格式)
+  - provider_id: "deepseek_generator"
+    provider_type: "deepseek"
+    model_name: "deepseek-reasoner"  # DeepSeek-V3 模型
+    # model_name: "deepseek-chat"  # DeepSeek-V3 模型
+    base_url: "https://api.deepseek.com"
+    max_retries: 3
+    timeout_seconds: 60
+    temperature: 1.0
+    max_tokens: 2000
+
+generator_provider_id: "deepseek_generator"
+refiner_provider_id: "deepseek_generator"
+
+artifact_dir: "artifacts"
+save_interval: 5

@@ -1,0 +1,31 @@
+run_id: "funsearch_random_small_20260202_024429"
+seed: 42
+max_generations: 5
+population_size: 10
+num_islands: 3
+top_k_for_full_eval: 5
+
+task_name: "bin_packing"
+
+evaluator:
+  type: "random"
+  size: "small"
+  capacity: 100
+  seed: 42
+  use_sandbox: true
+
+llm_providers:
+  - provider_id: "main_provider"
+    provider_type: "deepseek"
+    model_name: "deepseek-chat"
+    base_url: "https://api.deepseek.com"
+    max_retries: 3
+    timeout_seconds: 60
+    temperature: 1.0
+    max_tokens: 2000
+
+generator_provider_id: "main_provider"
+refiner_provider_id: "main_provider"
+
+artifact_dir: "artifacts"
+save_interval: 5

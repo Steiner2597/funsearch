@@ -1,0 +1,26 @@
+run_id: funsearch_orlib_small_20260131_224403
+seed: 42
+max_generations: 50
+population_size: 15
+num_islands: 3
+top_k_for_full_eval: 5
+generator_provider_id: main_provider
+refiner_provider_id: main_provider
+task_name: bin_packing
+evaluator:
+  type: orlib
+  size: small
+  capacity: 100
+  seed: 42
+llm_providers:
+- provider_id: main_provider
+  provider_type: deepseek
+  model_name: deepseek-chat
+  base_url: https://api.deepseek.com
+  max_retries: 3
+  timeout_seconds: 60
+  temperature: 1.0
+  max_tokens: 2000
+artifact_dir: artifacts
+save_interval: 5
+resume_from: null

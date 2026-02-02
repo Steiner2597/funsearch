@@ -1,0 +1,10 @@
+"""Best candidate from run: funsearch_random_small_20260202_014133
+
+Generated at: 2026-02-01T17:41:38.878333+00:00
+Score: -42.1
+Generation: 0
+Model: main_provider
+"""
+
+def score_bin(item_size, remaining_capacity, bin_index, step) -> float:
+    return float(remaining_capacity) - 5

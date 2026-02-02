@@ -1,0 +1,275 @@
+Course Project
+1. Project Logistics
+We recommend project groups of 3 students, but groups of 1 or 2 are also allowed. The project is worth 30% of your course grade; please be mindful of the workload when forming teams. All team members share the same project grade with no exceptions. 
+
+
+1.1 What to submit
+What to submit for project proposal [20% of project grade, 6% of total grade]
+Due Feb 24, 2026, 11:59 pm HKT
+
+Who is in your group
+What do you plan to do
+Which topic/problem are you planning to choose and why? 
+What is your tentative plan for solving the problem?
+How do you plan to evaluate your solution? In other words, what dataset/benchmark test instances do you plan to use, and what existing algorithm do you plan to compare against?
+Format: please use the ICLR '24 style fileLinks to an external site. and prepare a one-page document without references and abstract. (ICLR '24 style file can be directly downloaded from hereLinks to an external site.)  
+ 
+
+What to submit for project milestone [10% of project grade, 3% of total grade]
+Due Mar 31, 2026, 11:59 pm HKT
+
+The purpose of the milestone is to encourage you to get started on the project early, and for the TAs to have something more substantial to give feedback on.
+
+Code for
+Evaluation on the dataset/benchmark test instances you chose
+Any other programs required by your project
+Report draft
+Problem description and motivation of your method/approach
+Design of your method/approach
+Preliminary results
+ 
+
+What to submit for final project [70% of project grade, 21% of total grade]
+Due Apr 26, 2026, 11:59 pm HKT
+
+Final project report with the following format (50 points):
+Please use the ICLR '24 style fileLinks to an external site. (the same style file as the proposal).
+Please include the following information (or equivalent): 
+Motivation & explanation of problem/task (10 points)
+Appropriateness & explanation of your method (15 points)
+Insights + results (15 points)
+Presentation (writing, figures, etc.) (10 points)
+4
+ page limit 
+ 6, excluding references. 
+A link to Google Colab containing codes for reproducing the results in your project report (20 points):
+Code: correctness, design (15 points)
+Documentation: class/function descriptions, comments in code (5 points)
+See "Section 1.2: Instruction on code submission" for details.
+ 
+
+1.2 Instruction on code submission (Google Colab)
+Codes should be prepared via Google Colab. Your Google Colab should include:
+
+A high-level summary of what the code is about and what the task is
+All the code to reproduce your results in the final reports (including data preprocessing, model definition, and train/evaluation pipeline, depending on the specifications of your project).
+Detailed comments on what each cell does.
+The Google Colab should be self-contained and runnable as it is. 
+See hereLinks to an external site. for examples of good Google Colabs. 
+
+ 
+
+2. Project Topics
+See this Google DocLinks to an external site. for a list of pre-specified project topics. Feel free to choose a different project topic based on your research interests/background. 
+
+ 
+
+3. Compute Resources
+ChatGPT API credits will be provided to each team (not per person) if your project involves using LLMs.
+These credits will allow you to query GPT-3.5 ~20,000 times (assuming inputs and outputs are both around 500 tokens). 
+These credits will be sent to you upon approval of your project proposal. 
+Please be mindful of the ChatGPT API usage. More API quota is available at cost. 
+
+Google Cloud credits. Google also provides $300 in creditsLinks to an external site. for new customers, so definitely check that out too if it applies to you! These credits can be used in Google Colab to access more advanced GPUs (e.g., TPUv3, A100, etc.). 
+ 
+
+4. Others
+In addition, we will invite top-ranked teams to extend their projects for possible publications at top-tier venues, e.g., NeurIPS '26 (May), EMNLP '26 (June), etc. 
+Extra computing resources (e.g., GPUs, ChatGPT API credits, etc.) will be provided. 
+A senior/experienced graduate student will be assigned to help your team. 
+Weekly meetings with the instructor are also available upon request.  
+
+
+
+
+
+
+
+
+
+
+
+
+
+Project Topics：
+
+
+CS5491 AI Project：
+Automated Heuristic Design via Large Language Models
+A Heuristic is a function that estimates how close a candidate solution is to a goal; for example, Euclidean distance (straight-line distance) between two cities is a heuristic for estimating how close a city is to the goal city. Traditionally, heuristics are designed manually by human experts via tedious trial-and-error. In this project, we would like to explore how the design of a heuristic can be formulated as a search problem and how we can leverage large language models (LLMs)  to search over the space of heuristics and find better heuristic functions for a given problem. 
+
+Specifically, let us consider the online bin packing problem we discussed in class as an example. To recap, the bin packing problem is an optimization problem in which items of different sizes must be packed into a finite number of bins or containers, each of a fixed given capacity, to minimize the number of bins used. Then, in an online bin packing problem, items of different volumes are supposed to arrive sequentially, and the decision maker has to decide whether to select and pack the currently observed item or let it pass. Each decision is without recall. See the figure below for a pictorial illustration.
+
+
+A generic template of the heuristic for online bin packing problems can be coded via Python as follows:
+def heuristic(bins, item):
+    # input arguments:
+    #    bins: the current capacities of each bin
+    #    item: the size of the item to be packed
+    # output:
+    #    index of the bin for holding the item
+    
+    # ------------ start of heuristic function -------------- #
+    index = ...  # to be determined
+    # ------------ end of heuristic function -------------- #
+    return index
+
+
+Then, a simple heuristic to “Pack items according to remaining capacities of the bins” can be implemented as follows:
+def heuristic(bins, item):
+    # input arguments:
+    #    bins: the current capacities of each bin
+    #    item: the size of the item to be packed
+    # output:
+    #    index of the bin for holding the item
+
+    # ------------ start of heuristic function -------------- #
+    # the remaining capacity of each bin if the item is placed in every bin 
+    remaining_capacity = bins - item
+    # find the index of the bin with least capacity remaining
+    index = argmin(remaining_capacity)
+    # ------------ end of heuristic function -------------- #
+
+    return index
+
+
+Now, instead of relying on human intuitions or manual trial-and-errors to find a better heuristic, we would like to automate the design process by treating it as a search problem. One successful realization of this idea is presented in a recent Google Deepmind paper published in Nature: Mathematical discoveries from program search with large language models. The method is called FunSearch, and the main idea is illustrated in the following figure: 
+
+Figure credits: https://www.nature.com/articles/s41586-023-06924-6
+
+FunSearch refers to a heuristic function as a program. FunSearch first asks an LLM to create a set of programs, each of which will be incorporated into the general heuristic code template, as shown above. Each program will be evaluated on some test instances of the online bin packing problems, and the resulting performance will be recorded. Then, the main loop of FunSearch starts, where in each iteration, FunSearch picks a promising program (in terms of performance) from the set of programs created before. This program will be sent to an LLM for further modifications so that the performance can be improved. Then, the modified program is evaluated (again, on some test instances of the online bin packing problem), and it will replace the original program if its performance improves. This process will repeat for many iterations until a novel program is obtained or some pre-defined max # of iterations is reached. 
+
+Useful resources:
+FunSearch
+Paper: https://www.nature.com/articles/s41586-023-06924-6
+Blog post: https://deepmind.google/discover/blog/funsearch-making-new-discoveries-in-mathematical-sciences-using-large-language-models/ 
+Official implementation by Google Deepmind: https://github.com/google-deepmind/funsearch/tree/main (note that this implementation does NOT include the codes for (i) LLM interface and (ii) performance evaluation of a program (referred to as “sandbox” in the code). 
+
+
+Online bin packing problem:
+Datasets: 
+OR dataset (http://people.brunel.ac.uk/~mastjjb/jeb/info.html )
+WeiBull dataset (http://mistic.heig-vd.ch/taillard/problemes.dir/ordonnancement.dir/ordonnancement.html )
+
+A Jupyter notebook comparing the performance of the heuristics designed by human experts and by FunSearch is provided by Google Deepmind at https://github.com/google-deepmind/funsearch/blob/main/bin_packing/bin_packing.ipynb 
+
+
+FunSearch on online bin packing problem
+We provide a functional implementation of FunSearch on online bin packing problems for you: 
+(Google Colab) bin_packing_funsearch.ipynb
+(Github) https://github.com/RayZhhh/funsearch 
+
+Other related works:
+AEL: https://arxiv.org/abs/2311.15249
+GLS: https://arxiv.org/abs/2401.02051 
+AlphaGeometry: https://deepmind.google/discover/blog/alphageometry-an-olympiad-level-ai-system-for-geometry/
+
+Potential project topics:
+Application to other search problems beyond packing, for example:
+Traveling salesman problem (TSP)
+A quick overview: 
+https://developers.google.com/optimization/routing/tsp 
+
+
+Datasets / Benchmark test suites
+TSPLib http://comopt.ifi.uni-heidelberg.de/software/TSPLIB95/ 
+TSPLib Symmetric (Recommend) http://comopt.ifi.uni-heidelberg.de/software/TSPLIB95/tsp/ 
+
+
+Existing heuristics / algorithms designed by human experts
+Constructive Heuristics (nearest, cheapest, farthest) https://github.com/wouterkool/attention-learn-to-route/blob/master/problems/tsp/tsp_baseline.py  
+Commercial solver (Gurobi) https://github.com/wouterkool/attention-learn-to-route/blob/master/problems/tsp/tsp_gurobi.py 
+SOTA heuristic solver (LKH)  source in C http://webhotel4.ruc.dk/~keld/research/LKH-3/ python wrapper  https://github.com/ben-hudson/pylkh 
+Neural Solver (AM, POMO) https://github.com/wouterkool/attention-learn-to-route/tree/master, https://github.com/yd-kwon/POMO 
+Google OR-Tools
+
+
+Flow job shop scheduling
+A quick overview: https://developers.google.com/optimization/scheduling/job_shop (flow shop scheduling is a special case of job shop scheduling with all jobs having the same execution order)
+
+
+Dataset / benchmark:
+OR-Library http://people.brunel.ac.uk/~mastjjb/jeb/info.html
+Taillard dataset http://mistic.heig-vd.ch/taillard/problemes.dir/ordonnancement.dir/ordonnancement.html
+VRF dataset http://soa.iti.es/problem-instances 
+
+
+Existing heuristics / algorithms designed by human experts
+Google OR-Tools
+Some simple heuristics https://github.com/KamilGos/flowshop-scheduling 
+
+
+
+Capacitated Vehicle Routing Problem (CVRP)
+A quick overview: 
+https://developers.google.com/optimization/routing/cvrp 
+
+
+Dataset / benchmark:
+CVRPLib http://vrp.atd-lab.inf.puc-rio.br/index.php/en/
+Uchoa et al, A,B,E,F,M,P Sets (Recommend)
+Top CVRPTW, PDPTW https://www.sintef.no/projectweb/top/ 
+
+
+Existing heuristics / algorithms designed by human experts
+A collection of 15 classical heuristics for CVRP (https://github.com/yorak/VeRyPy) 
+Google OR-Tools
+One of SOTA heuristic solvers (LKH)  source in C http://webhotel4.ruc.dk/~keld/research/LKH-3/ python wrapper  https://github.com/ben-hudson/pylkh 
+One of SOTA heuristic solvers (HGS)  source in C https://github.com/vidalt/HGS-CVRP 
+Neural Solver (AM, POMO) https://github.com/wouterkool/attention-learn-to-route/tree/master, https://github.com/yd-kwon/POMO 
+SOTA heuristic for large scale CVRP https://github.com/vinymax10/AILS-CVRP/tree/main 
+
+More problems are available from https://developers.google.com/optimization/introduction/python 
+
+Note that it is not enough to apply FunSearch to a new problem simply. We expect to see some form of novelty (e.g., developing a modified version of FunSearch for your specific problem) for the project.
+
+
+FunSearch enhancements. FunSearch provides a simple and generic implementation of the idea that uses LLM to automate the heuristic design as program/code search. Under this topic, we seek enhancements to make FunSearch more effective, efficient, and robust. Some potential ideas to get you started are as follows. (Note that it is okay to use the online bin packing problem for this topic; feel free to use other problems you may desire.)
+
+“Thoughts–augmented FunSearch”
+In addition to codes, can we also use thoughts/ideas, expressed as natural language descriptions/texts, to enhance the performance of FunSearch. For example, we can supply a short description of what the heuristic should do and its corresponding codes to LLM and see if LLM can generate better heuristics faster.
+
+
+“Sample-efficient FunSearch”
+Many programs/codes will be created as FunSearch progresses. The chance of a newly sampled program/code being functionally similar to an existing sampled/evaluated program will increase. Instead of assessing blindly all programs/codes created by an LLM, can we design a duplicate code-checking mechanism to avoid FunSearch evaluating a code that has been previously evaluated? This duplicate code-checking mechanism should be quick enough to execute (i.e., ideally, it should take less time to check for duplicates than to evaluate the performance). 
+
+
+Note that the similarity between two programs/codes should be defined at the functionality level; see below for two different Python codes that calculate the mean of a list of numbers. Although they look different, they have the same functionality:
+
+
+
+“Novelty-driven FunSearch”
+Instead of always finding the best (in terms of some performance metric) solutions, we often would like to explore different ways to solve the same problem in real-world situations. In our context, this means that we would like to find programs/codes with diversely different behaviors (in terms of functional logic), but can fulfill the same goal reasonably well.  Take a look at Ken Stanley’s talk on “why greatness can not be planned?” to get some ideas on this topic. Essentially, we would like to replace the original search routine in FunSearch with the so-called “Novelty Search” algorithm, as described in the video. 
+
+
+“Multi-objective FunSearch”
+In addition to performance, there are additional criteria that one may desire for a heuristic function, for example: 
+Interpretability, i.e., how easily can humans comprehend the obtained heuristic function?
+Simplicity, i.e., one may desire simpler heuristics than complicated ones.
+…
+Can we add these criteria to the original FunSearch to find heuristics simultaneously satisfying these desired properties?
+
+
+Heuristic-oriented search space and distance study.  
+Add distance function to measure the difference of heuristics; refer to the works on EC and coding distance in ML
+Advanced population management, e.g., multi-population, maintain diversity, allow infeasible heuristics
+
+Adaption of FunSearch to Machine Learning applications. Instead of using LLMs to evolve programs/codes as heuristic functions to guide a search algorithm. Can you adapt the same idea to develop programs/codes for ML tasks? 
+
+“Neural Architecture Search”
+A deep neural network’s (DNN) model can be expressed as Python codes using PyTorch or TensorFlow (see below for an example). Then, we can apply FunSearch to design a DNN model as a search problem.
+
+Resources:
+Papers:
+NAS Dataset / Benchmarks:
+Other valuable materials to read:
+
+“Robitcs Control”
+The controlling logics of a robot can also be expressed as a program/code, in this case, we can apply FunSearch to automatically find a program/code to control the robotic for performing certain tasks. 
+
+Resources
+Papers: https://arxiv.org/abs/2307.16890 
+Video: https://www.youtube.com/watch?v=sEFP1Hay4nE
+
+
+Game playing, …
