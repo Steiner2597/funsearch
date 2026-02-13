@@ -1,7 +1,7 @@
-run_id: "funsearch_random_small_20260202_024429"
+run_id: "funsearch_random_small_20260203_191026"
 seed: 42
-max_generations: 5
-population_size: 10
+max_generations: 3
+population_size: 3
 num_islands: 3
 top_k_for_full_eval: 5
 
