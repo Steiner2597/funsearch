@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import itertools
 import random
+import sys
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -247,7 +248,8 @@ class FunSearchLoop:
             desc=f"  Gen {generation_index+1} Islands",
             leave=False,
             ncols=80,
-            bar_format="{desc}: {n_fmt}/{total_fmt} |{bar}| {elapsed}<{remaining}"
+            bar_format="{desc}: {n_fmt}/{total_fmt} |{bar}| {elapsed}<{remaining}",
+            disable=not sys.stderr.isatty(),
         )
         
         for island_index, island in island_pbar:
@@ -337,7 +339,8 @@ class FunSearchLoop:
             desc=f"    Candidates",
             leave=False,
             ncols=80,
-            bar_format="{desc}: {n_fmt}/{total_fmt} |{bar}| {elapsed}<{remaining}"
+            bar_format="{desc}: {n_fmt}/{total_fmt} |{bar}| {elapsed}<{remaining}",
+            disable=not sys.stderr.isatty(),
         )
         
         for idx in cand_pbar:

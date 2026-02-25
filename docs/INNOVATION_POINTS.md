@@ -8,13 +8,14 @@
 
 | # | 创新点 | 课程对应方向 | 核心思想 | 实现模块 | 收益 |
 |---|--------|-------------|----------|----------|------|
-| 1 | 功能级去重 | Sample-efficient FunSearch | 跳过功能相同的代码评估 | `funsearch_core/deduplication.py` | 避免重复评估 |
-| 2 | 多模型协作 | 成本感知搜索 | 分阶段使用不同模型 | `experiments/runner.py` | API成本↓87% |
-| 3 | 多样性驱动搜索 | Novelty-driven FunSearch | 多岛模型 + 行为签名多样性 | `funsearch_core/islands.py` + `diversity.py` | 避免局部最优 |
+| 1 | 功能级去重 | Sample-efficient FunSearch | 两阶段去重：代码规范化哈希 + 行为签名 | `funsearch_core/deduplication.py` | 避免重复评估 |
+| 2 | 可配置多模型 | 成本感知/协作搜索 | 生成器与精炼器可绑定不同 LLM provider | `experiments/runner.py` | 便于按预算/质量选择模型 |
+| 3 | 多样性驱动搜索 | Novelty-driven FunSearch | 多岛模型 + 行为签名多样性过滤（需配置迁移启用） | `funsearch_core/islands.py` + `diversity.py` | 减少收敛到局部最优 |
 
 **工程优化** (非核心创新):
 - 多保真度评估: cheap → full 两阶段筛选 (`evaluator/bin_packing.py`)
 - 搜索轨迹可观测性: 实时指标 + 可视化 (`experiments/metrics.py` + `plotting.py`)
+- 沙箱批量评估：隔离执行并批量评分 (`experiments/runner.py` + `sandbox/executor.py`)
 
 ---
 
@@ -80,25 +81,24 @@ def mean(lst):
 def _normalize_code(code: str) -> str:
     """规范化代码以进行比较。
     
-    移除注释、文档字符串、标准化空白，
+    通过移除注释、文档字符串并标准化空白符，
     使得文本不同但语义相同的代码产生相同哈希。
     """
-    lines = code.split("\n")
-    normalized_lines = []
-    for line in lines:
-        # 移除行内注释
-        if "#" in line:
-            line = line[:line.index("#")]
-        line = line.rstrip()
-        if line:
-            normalized_lines.append(line)
-    return "\n".join(normalized_lines)
+    import re
+    # 移除单行注释
+    code = re.sub(r'#.*$', '', code, flags=re.MULTILINE)
+    # 移除文档字符串 (三引号包裹的内容)
+    code = re.sub(r'""".*?"""', '', code, flags=re.DOTALL)
+    code = re.sub(r"'''.*?'''", '', code, flags=re.DOTALL)
+    # 标准化空白: 将多个空白符替换为单个空格
+    code = re.sub(r'\s+', ' ', code)
+    return code.strip()
 
 
 def _code_hash(code: str) -> str:
     """计算规范化代码的哈希值。"""
     normalized = _normalize_code(code)
-    return hashlib.sha256(normalized.encode()).hexdigest()[:16]
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
 # ============ 第二阶段: 行为签名 ============
@@ -161,43 +161,46 @@ class FunctionalDeduplicator:
 ```python
 def create_binpacking_probe_runner(
     capacity: int = 100,
-    num_items: int = 8,
+    num_items: int = 15,
 ) -> Callable[[str, int], float]:
     """创建捕获评分行为的探针运行器。
     
     关键设计: 记录每步的评分值，而非最终装箱结果。
     这样可以区分评分方式不同但选择相同箱子的策略。
     """
-    def run_probe(code: str, seed: int) -> float:
-        rng = random.Random(seed)
-        # 生成不同分布的物品
-        if seed % 3 == 0:
-            items = [rng.randint(1, capacity // 2) for _ in range(num_items)]
-        elif seed % 3 == 1:
-            items = [rng.randint(capacity // 3, capacity - 1) for _ in range(num_items)]
-        else:
-            items = [rng.randint(1, capacity - 1) for _ in range(num_items)]
+    def probe_runner(code: str, seed: int) -> float:
+        # 使用不同分布生成确定性物品序列
+        # ... (数据生成过程)
         
         behavior_fingerprint = 0.0
         bins_remaining = [capacity]
         
         for step, item_size in enumerate(items):
-            # 收集每个箱子的评分
             scores_for_step = []
+            # 运行 LLM 生成的 score_bin 函数
             for i, remaining in enumerate(bins_remaining):
-                score = float(score_bin(item_size, remaining, i, step))
-                scores_for_step.append(score)
+                if remaining >= item_size:
+                    score = float(score_bin(item_size, remaining, i, step))
+                    scores_for_step.append(score)
             
-            # 将评分值编码到指纹中 (关键区分点!)
-            for idx, s in enumerate(sorted(scores_for_step, reverse=True)[:3]):
-                behavior_fingerprint += s * (0.1 ** (idx % 5)) * (1.0 + step * 0.01)
+            # 关键洞察: 将评分值本身编码到指纹中 (不仅仅是最终选择)
+            # 这能有效区分评分逻辑不同但碰巧选择了同一个箱子的启发式算法
+            for idx, s in enumerate(scores_for_step):
+                if s == s:  # 排除 NaN
+                    # 根据位置和步数赋予权重，生成唯一行为指纹
+                    behavior_fingerprint += s * (0.1 ** (idx % 5)) * (1.0 + step * 0.01)
             
-            # 执行装箱
-            ...
+            # 执行装箱 (入最佳得分箱或新开箱)
+            # ...
+            
+            # 同时将最终决策路径也编码到指纹中
+            behavior_fingerprint += best_bin * 100 + step
         
+        # 将最终箱子总数也作为维度包含在内
+        behavior_fingerprint += len(bins_remaining) * 10000
         return behavior_fingerprint
     
-    return run_probe
+    return probe_runner
 ```
 
 #### 调用位置: `funsearch_core/loop.py`
@@ -310,176 +313,57 @@ def mean(lst):
 
 ---
 
-## 创新点 2: 多模型协作 (Multi-Model Collaboration)
+## 创新点 2: 可配置多模型 (Multi-Model Configuration)
 
 ### 2.1 问题背景
 
-LLM 在代码生成质量和成本上存在权衡：
-
-| 模型类型 | 质量 | 成本 | 速度 |
-|---------|------|------|------|
-| 强大模型 (GPT-4) | 高 | 高 ($$$) | 慢 |
-| 廉价模型 (GPT-3.5) | 中 | 低 ($) | 快 |
-
-**传统方案的问题**:
-- 全用 GPT-4: 质量好但预算爆炸
-- 全用 GPT-3.5: 便宜但搜索质量差
+LLM 质量、成本、速度存在权衡，但不同项目的预算和精度要求各异，因此需要在配置层面灵活切换或组合模型，而不是硬编码某个“协作策略”。
 
 ### 2.2 解决方案
 
-**分阶段使用不同模型**，在预算内平衡探索和开发:
+在配置文件中为“生成器”和“精炼器”绑定可独立选择的 provider，用户可根据需求分别指向便宜或高质量的模型。项目本身不做自动成本调度或分阶段管线，只提供可配置的多模型能力。
 
-```
-生成阶段 (Generation):
-  ├─ 模型: 廉价模型 (GPT-3.5 / FakeProvider)
-  ├─ 任务: 批量生成候选 (generate + mutate)
-  ├─ 数量: 每代 40-50 个候选
-  └─ 目标: 广泛探索搜索空间
-
-精炼阶段 (Refinement):
-  ├─ 模型: 强大模型 (GPT-4)
-  ├─ 任务: 优化 Top-K 候选 (refine)
-  ├─ 数量: 每代 5-10 个候选
-  └─ 目标: 深度开发优质区域
-```
-
-### 2.3 实现证据
+### 2.3 实现证据（可配置能力）
 
 #### 配置位置: `configs/binpacking.yaml`
 
 ```yaml
-# 定义多个 LLM 提供者
+# 配置示例（可根据预算替换为不同模型/供应商）
 llm_providers:
-  - provider_id: "cheap_generator"
-    provider_type: "openai"
-    model_name: "gpt-3.5-turbo"
-    temperature: 0.8
-    max_retries: 3
-  
-  - provider_id: "strong_refiner"
-    provider_type: "openai"
-    model_name: "gpt-4"
-    temperature: 0.3
-    max_retries: 5
+    - provider_id: main_provider
+        provider_type: deepseek
+        model_name: deepseek-chat
+        base_url: https://api.deepseek.com
+        temperature: 1.0
 
-# 指定生成器和精炼器
-generator_provider_id: "cheap_generator"  # 用于 generate/mutate
-refiner_provider_id: "strong_refiner"     # 用于 refine Top-K
+# 生成/精炼可指向不同 provider_id（当前示例指向同一个，可按需拆分）
+generator_provider_id: main_provider
+refiner_provider_id: main_provider
 ```
 
 #### 实现位置: `experiments/runner.py`
 
 ```python
-class ExperimentRunner:
-    def _setup_providers(self, config: RunConfig) -> tuple[LLMProvider, LLMProvider]:
-        """初始化生成器和精炼器"""
-        generator = self._create_provider(config.generator_provider_id)
-        refiner = self._create_provider(config.refiner_provider_id)
-        return generator, refiner
-
-    def run(self, config: RunConfig) -> RunResult:
-        generator, refiner = self._setup_providers(config)
-        
-        # 传递给 FunSearchLoop
-        loop = FunSearchLoop(
-            config=config,
-            llm_provider=generator,      # 用于日常生成
-            refiner_provider=refiner,    # 用于精炼 Top-K
-            evaluator=evaluator,
-            store=store,
-        )
-        
-        best_candidate = loop.run(num_generations=config.max_generations)
-        return RunResult(best_candidate=best_candidate)
+def _setup_providers(self, config: RunConfig) -> tuple[LLMProvider, LLMProvider]:
+    generator = self._create_provider(config.generator_provider_id)
+    refiner = self._create_provider(config.refiner_provider_id)
+    return generator, refiner
 ```
 
-#### 调用位置: `funsearch_core/loop.py`
+### 2.4 使用建议
 
-```python
-class FunSearchLoop:
-    def __init__(
-        self,
-        *,
-        llm_provider: LLMProvider,        # 生成器
-        refiner_provider: LLMProvider,    # 精炼器
-        evaluator: Evaluator,
-        store: CandidateStore,
-        config: RunConfig,
-    ):
-        self.llm_provider = llm_provider
-        self.refiner_provider = refiner_provider
-        # ...
-
-    def _generate_candidates(self) -> list[Candidate]:
-        """使用生成器批量创建候选"""
-        candidates = []
-        
-        # 从头生成 (使用廉价模型)
-        for _ in range(10):
-            code = self.llm_provider.generate(temperature=0.8)
-            candidates.append(Candidate(code=code, provider_id=self.llm_provider.provider_id))
-        
-        # 变异现有候选 (使用廉价模型)
-        parents = self.population.sample(k=40)
-        for parent in parents:
-            code = self.llm_provider.mutate(parent_code=parent.code, temperature=0.7)
-            candidates.append(Candidate(code=code, parent_id=parent.id, provider_id=self.llm_provider.provider_id))
-        
-        return candidates
-
-    def _refine_top_k(self) -> None:
-        """使用精炼器优化 Top-K 候选"""
-        top_k = self.population.get_top_k(k=5)
-        
-        for candidate in top_k:
-            # 使用强大模型深度优化
-            refined_code = self.refiner_provider.refine(
-                candidate_code=candidate.code,
-                temperature=0.3
-            )
-            refined_candidate = Candidate(
-                code=refined_code,
-                parent_id=candidate.id,
-                provider_id=self.refiner_provider.provider_id,
-                metadata={"refined": True}
-            )
-            self.population.add(refined_candidate)
-```
-
-### 2.4 效果分析
-
-假设 API 成本:
-- GPT-3.5: $0.001 / 请求
-- GPT-4: $0.03 / 请求
-
-**传统方案 (单一模型)**:
-- 全用 GPT-4: 50 candidates/gen × 20 gens × $0.03 = **$30**
-- 全用 GPT-3.5: 50 candidates/gen × 20 gens × $0.001 = **$1** (但质量差)
-
-**多模型协作方案**:
-- 生成: 45 candidates/gen × 20 gens × $0.001 = **$0.9**
-- 精炼: 5 candidates/gen × 20 gens × $0.03 = **$3**
-- **总成本: $3.9** (仅为全 GPT-4 的 13%)
-
-**收益**:
-- ✅ 成本降低 87%
-- ✅ 质量接近全 GPT-4 (Top-K 仍然得到强大模型优化)
-- ✅ 灵活性: 可根据预算调整模型分配
+- 若需要节省成本，可将 generator 指向便宜模型，将 refiner 指向高质量模型。
+- 若只需快速验证，可将两者指向同一便宜模型（如当前示例）。
+- 成本与质量取决于用户选择的具体模型与调用次数，项目本身不做自动成本估算。
 
 ### 2.5 验证方法
 
-运行实验后检查候选的 provider_id 分布:
+运行实验后检查候选的 provider_id 分布（如配置了不同 provider_id，可看到不同分布；单一 provider 时分布一致）：
 
 ```bash
 python -m experiments.cli run configs/binpacking.yaml
 sqlite3 artifacts/binpacking_demo_001/candidates.db \
-  "SELECT metadata->>'provider_id' as provider, COUNT(*) FROM candidates GROUP BY provider;"
-```
-
-预期输出:
-```
-cheap_generator | 900  (大部分候选来自廉价模型)
-strong_refiner  | 100  (少数精炼候选来自强大模型)
+    "SELECT metadata->>'provider_id' as provider, COUNT(*) FROM candidates GROUP BY provider;"
 ```
 
 ---
@@ -782,7 +666,7 @@ large = load_orlib_large()
 | 传统实现 | FunSearch-Lite (本项目) | 课程对应 | 改进 |
 |---------|------------------------|---------|------|
 | 语法级代码去重 | **功能级去重** (行为签名) | Sample-efficient | LLM 调用↓30-50% |
-| 单一模型生成 | 多模型协作 (生成器 + 精炼器) | 成本感知 | API 成本↓87%，质量不降 |
+| 单一模型生成 | 可配置多模型 (生成器 + 精炼器) | 成本/质量可调 | 由用户选择的模型决定成本与精度 |
 | 单一种群易陷入局部最优 | 多岛模型 + 行为签名多样性 | Novelty-driven | 探索更多搜索空间 |
 
 ## 实验验证清单
@@ -814,7 +698,7 @@ sqlite3 artifacts/binpacking_deepseek_002/candidates.db \
    FROM candidates;"
 # 预期: skipped_duplicates / total_generated ≈ 20-40%
 
-# 3. 验证多模型协作 (创新点2)
+# 3. 验证可配置多模型 (创新点2)
 sqlite3 artifacts/binpacking_deepseek_002/candidates.db \
   "SELECT json_extract(metadata, '$.provider_id') as provider, COUNT(*) 
    FROM candidates 
@@ -840,10 +724,10 @@ sqlite3 artifacts/binpacking_deepseek_002/candidates.db \
    - 展示去重节省的 LLM 调用次数统计
    - 引用测试 `test_different_code_same_behavior_is_duplicate` 证明功能正确
 
-2. **章节 3.2 - 多模型协作 (Cost-aware)**
-   - 贴上 `experiments/runner.py` 和 `configs/binpacking.yaml` 配置
-   - 插入成本对比表格 (全 GPT-4 vs 多模型)
-   - 展示候选的 provider_id 分布统计
+2. **章节 3.2 - 可配置多模型 (Configurable)**
+    - 贴上 `experiments/runner.py` 和 `configs/binpacking.yaml` 配置
+    - 说明可独立选择生成器/精炼器的 provider，突出灵活性
+    - 展示候选的 provider_id 分布统计（若配置了不同 provider）
 
 3. **章节 3.3 - 多样性驱动搜索 (Novelty-driven)**
    - 贴上 `funsearch_core/islands.py` 和 `diversity.py` 关键代码
@@ -862,7 +746,7 @@ sqlite3 artifacts/binpacking_deepseek_002/candidates.db \
 
 ```
 tests/test_deduplication.py      # 测试功能级去重
-tests/test_experiments.py        # 测试多模型协作配置
+tests/test_experiments.py        # 测试多模型配置
 tests/test_funsearch_core.py     # 测试多岛模型和多样性维护
 ```
 

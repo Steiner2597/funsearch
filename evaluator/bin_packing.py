@@ -10,8 +10,11 @@ from __future__ import annotations
 import math
 import numbers
 import random
+import sys
 from dataclasses import dataclass
 from typing import Callable, TypeAlias, TYPE_CHECKING
+
+from tqdm import tqdm
 
 from .base import BaseEvaluator, Candidate, EvalResult
 from .heuristics import first_fit_score_bin
@@ -156,27 +159,36 @@ class BinPackingEvaluator(BaseEvaluator):
 
         instance_bins: list[int] = []
         baseline_bins: list[int] = []
-        for items in instances:
+        # 在单个 candidate 内部为实例评估增加细粒度进度条
+        for items in tqdm(
+            instances,
+            desc="      Instances",
+            leave=False,
+            ncols=80,
+            disable=not sys.stderr.isatty(),
+        ):
             ordered_items = sorted(items, reverse=True)
             instance_bins.append(
                 pack_with_heuristic(ordered_items, self.capacity, candidate.score_bin)
             )
             baseline_bins.append(first_fit_decreasing(ordered_items, self.capacity))
 
-        # Calculate score: bins saved relative to FFD baseline (positive = better)
+        # Calculate scores
         avg_bins = sum(instance_bins) / len(instance_bins)
         avg_baseline = sum(baseline_bins) / len(baseline_bins)
         total_saved = sum(b - c for b, c in zip(baseline_bins, instance_bins))
+        score = -avg_bins
         return EvalResult(
-            score=total_saved,  # Positive = better than FFD baseline
+            score=score,  # Fewer bins => higher score (less negative)
             n_instances=len(instance_bins),
             instance_bins=instance_bins,
-            baseline_score=total_saved,  # Same as score for consistency
+            baseline_score=total_saved,  # Bins saved vs FFD baseline
             baseline_bins=baseline_bins,
             metadata={
                 "n_instances": len(instance_bins),
                 "avg_bins": avg_bins,
                 "avg_baseline": avg_baseline,
+                "total_saved": total_saved,
             },
         )
 
@@ -237,7 +249,14 @@ class BenchmarkEvaluator(BaseEvaluator):
         best_known_bins: list[int] = []
         instance_details: list[dict] = []
         
-        for inst in instances:
+        # 在基准评估中为每个实例增加细粒度进度条
+        for inst in tqdm(
+            instances,
+            desc="      Benchmark",
+            leave=False,
+            ncols=80,
+            disable=not sys.stderr.isatty(),
+        ):
             # Sort items in decreasing order (standard for online bin packing)
             ordered_items = sorted(inst.items, reverse=True)
             
@@ -265,10 +284,11 @@ class BenchmarkEvaluator(BaseEvaluator):
                 "gap_to_best": cand_result - inst.best_known,
             })
         
-        # Compute scores: bins saved relative to FFD baseline (positive = better)
+        # Compute scores
         avg_bins = sum(candidate_bins) / len(candidate_bins)
         avg_baseline = sum(baseline_bins) / len(baseline_bins)
         avg_best_known = sum(best_known_bins) / len(best_known_bins)
+        score = -avg_bins
         
         # Gap metrics
         total_gap = sum(c - b for c, b in zip(candidate_bins, best_known_bins))
@@ -278,10 +298,10 @@ class BenchmarkEvaluator(BaseEvaluator):
         )
         
         return EvalResult(
-            score=total_saved,  # Positive = better than FFD baseline
+            score=score,  # Fewer bins => higher score (less negative)
             n_instances=len(instances),
             instance_bins=candidate_bins,
-            baseline_score=total_saved,  # Same as score for consistency
+            baseline_score=total_saved,  # Bins saved vs FFD baseline
             baseline_bins=baseline_bins,
             metadata={
                 "n_instances": len(instances),
@@ -290,6 +310,7 @@ class BenchmarkEvaluator(BaseEvaluator):
                 "avg_baseline": avg_baseline,
                 "best_known_avg": avg_best_known,
                 "total_gap_to_best": total_gap,
+                "total_saved": total_saved,
                 "instances_matching_best": instances_matching_best,
                 "instance_details": instance_details,
             },

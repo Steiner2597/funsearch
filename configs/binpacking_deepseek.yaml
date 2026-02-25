@@ -22,8 +22,8 @@ evaluator:
   # 实例大小: "small" 或 "large"
   # - random/small:  5-10个物品, 快速测试
   # - random/large:  50-100个物品, 更真实
-  # - orlib/small:   前80个OR-Library实例 (binpack1-4)
-  # - orlib/large:   后80个OR-Library实例 (binpack5-8)
+  # - orlib/small:   binpack1,2,5,6 (包含均匀分布和三元组分布的小型实例)
+  # - orlib/large:   binpack3,4,7,8 (包含均匀分布和三元组分布的大型实例)
   size: "small"
   capacity: 100
   seed: 42

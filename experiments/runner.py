@@ -244,14 +244,12 @@ class SandboxBinPackingEvaluator:
         
         instance_bins = result.results
         
-        # 计算分数：相对于 baseline 节省的总箱子数
-        # 正数 = 比 baseline 好，负数 = 比 baseline 差
+        # 计算分数：使用平均箱子数（越少越好）
+        # 主评分使用 -avg_bins，与非沙箱评估保持一致
         total_saved = sum(b - c for b, c in zip(baseline_bins, instance_bins))
-        score = total_saved  # 总节省箱子数
-        
-        # 也保留平均箱子数供参考
         avg_bins = sum(instance_bins) / len(instance_bins)
         avg_baseline = sum(baseline_bins) / len(baseline_bins)
+        score = -avg_bins
         
         return {
             "score": score,
@@ -263,6 +261,7 @@ class SandboxBinPackingEvaluator:
                 "baseline_score": total_saved,
                 "baseline_bins": baseline_bins,
                 "avg_baseline": avg_baseline,
+                "total_saved": total_saved,
             },
         }
     
@@ -338,14 +337,12 @@ class SandboxBenchmarkEvaluator:
         
         instance_bins = result.results
         
-        # 计算分数：相对于 baseline 节省的总箱子数
-        # 正数 = 比 baseline 好，负数 = 比 baseline 差
+        # 计算分数：使用平均箱子数（越少越好）
+        # 主评分使用 -avg_bins，与非沙箱评估保持一致
         total_saved = sum(b - c for b, c in zip(baseline_bins, instance_bins))
-        score = total_saved  # 总节省箱子数
-        
-        # 也保留平均箱子数供参考
         avg_bins = sum(instance_bins) / len(instance_bins)
         avg_baseline = sum(baseline_bins) / len(baseline_bins)
+        score = -avg_bins
         
         return {
             "score": score,
@@ -357,6 +354,7 @@ class SandboxBenchmarkEvaluator:
                 "baseline_score": total_saved,
                 "baseline_bins": baseline_bins,
                 "avg_baseline": avg_baseline,
+                "total_saved": total_saved,
             },
         }
     
@@ -646,11 +644,16 @@ class ExperimentRunner:
         
         # 使用专门的探针运行器 - 快速测试代码行为而非完整评估
         # 记录评分决策过程（不只是装箱结果），提高区分度
-        probe_runner = create_binpacking_probe_runner(capacity=100, num_items=8)
+        eval_type = self.config.evaluator.get("type", "random")
+        default_probe_items = 20 if eval_type == "orlib" else 8
+        probe_num_items = self.config.evaluator.get("probe_num_items", default_probe_items)
+        probe_runner = create_binpacking_probe_runner(capacity=100, num_items=probe_num_items)
         
         signature_calculator = SignatureCalculator(probe_runner=probe_runner)
         selection_strategy = TournamentSelection(tournament_size=3)
-        diversity_maintainer = DiversityMaintainer()
+        default_min_distance = 0.05 if eval_type == "orlib" else 0.1
+        min_distance = self.config.evaluator.get("diversity_min_distance", default_min_distance)
+        diversity_maintainer = DiversityMaintainer(min_distance=min_distance)
         
         # 创新点1: 功能级去重 (两阶段)
         # Stage 1: 代码规范化哈希 - 快速过滤文本相同的代码

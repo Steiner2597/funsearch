@@ -1,15 +1,15 @@
-run_id: "funsearch_random_small_20260203_191026"
+run_id: "funsearch_orlib_large_20260225_214331"
 seed: 42
-max_generations: 3
-population_size: 3
+max_generations: 6
+population_size: 15
 num_islands: 3
 top_k_for_full_eval: 5
 
 task_name: "bin_packing"
 
 evaluator:
-  type: "random"
-  size: "small"
+  type: "orlib"
+  size: "large"
   capacity: 100
   seed: 42
   use_sandbox: true
