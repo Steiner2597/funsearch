@@ -1,0 +1,34 @@
+run_id: funsearch_random_small_20260228_002433
+seed: 42
+max_generations: 6
+population_size: 10
+num_islands: 3
+top_k_for_full_eval: 3
+generator_provider_id: main_provider
+refiner_provider_id: main_provider
+task_name: bin_packing
+evaluator:
+  type: random
+  size: small
+  capacity: 100
+  seed: 42
+  use_sandbox: false
+  enable_diversity: false
+  probe_mode: random
+  score_mode: gap_to_lb
+  full_eval_every_n_generations: 2
+llm_providers:
+- provider_id: main_provider
+  provider_type: fake
+  model_name: fake-model
+  max_retries: 3
+  timeout_seconds: 60
+  temperature: 1.0
+  max_tokens: 2000
+artifact_dir: artifacts
+save_interval: 5
+variant: b
+resume_from: null
+sandbox_memory_limit_mb: 256
+sandbox_timeout_s: 5.0
+batch_timeout_s: 30.0
