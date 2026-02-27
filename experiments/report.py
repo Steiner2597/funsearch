@@ -89,6 +89,23 @@ class ReportGenerator:
         total_attempted = self.kpis.get("total_candidates_attempted", 0)
         dedup_percent = (dedup_skipped / total_attempted * 100) if total_attempted > 0 else 0
 
+        funnel_md = ""
+        if self.metrics:
+            last_metric = self.metrics[-1]
+            funnel = last_metric.get("funnel")
+            if isinstance(funnel, dict):
+                funnel_md = f"""
+## Candidate Flow Funnel
+- **Generated:** {funnel.get('generated', 0)}
+- **Dedup Rejected:** {funnel.get('dedup_rejected', 0)}
+- **After Dedup:** {funnel.get('after_dedup', 0)}
+- **Diversity Rejected:** {funnel.get('diversity_rejected', 0)}
+- **Cheap Eval Passed/Failed:** {funnel.get('cheap_eval_passed', 0)} / {funnel.get('cheap_eval_failed', 0)}
+- **Full Eval Passed/Failed:** {funnel.get('full_eval_passed', 0)} / {funnel.get('full_eval_failed', 0)}
+- **Effective Candidate Rate:** {funnel.get('effective_candidate_rate', 0.0):.2%}
+
+"""
+
         improvement = "N/A"
         if isinstance(start_score, (int, float)) and isinstance(end_score, (int, float)):
             improvement = f"{end_score - start_score:.4f}"
@@ -126,6 +143,7 @@ class ReportGenerator:
 - **Duplicates Skipped:** {dedup_skipped}
 - **Deduplication Efficiency:** {dedup_percent:.2f}%
 
+{funnel_md}
 ## Configuration
 ```yaml
 {yaml.dump(self.config, default_flow_style=False)}

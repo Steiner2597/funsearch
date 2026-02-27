@@ -166,3 +166,50 @@ def test_funsearch_loop_runs_generations_and_stores(tmp_path: Path) -> None:
     total = stats["total"]
     assert isinstance(total, int)
     assert total > 0
+
+
+def test_funsearch_loop_emits_funnel_and_timing_metrics() -> None:
+    config = RunConfig(
+        run_id="run-p2-metrics",
+        seed=11,
+        max_generations=1,
+        population_size=8,
+        num_islands=1,
+        top_k_for_full_eval=2,
+        generator_provider_id="gen",
+        refiner_provider_id="ref",
+        task_name="test",
+    )
+    generator = FakeProvider("gen")
+    refiner = FakeProvider("ref")
+    evaluator = FakeEvaluator()
+    signature_calculator = SignatureCalculator(_probe_runner)
+    selection = TournamentSelection(tournament_size=2, rng=random.Random(11))
+    diversity = DiversityMaintainer(min_distance=0.0)
+
+    loop = FunSearchLoop(
+        config=config,
+        generator=generator,
+        refiner=refiner,
+        evaluator=evaluator,
+        signature_calculator=signature_calculator,
+        selection_strategy=selection,
+        diversity_maintainer=diversity,
+        rng=random.Random(11),
+    )
+
+    stats = loop.run_generation()
+
+    assert "funnel" in stats
+    funnel = stats["funnel"]
+    assert isinstance(funnel, dict)
+    assert funnel["generated"] == config.population_size
+    assert funnel["after_dedup"] == funnel["generated"] - funnel["dedup_rejected"]
+    assert 0.0 <= stats["effective_candidate_rate"] <= 1.0
+
+    timing = stats["timing"]
+    assert "eval_ms_total" in timing
+    assert "eval_s_total" in timing
+    assert "avg_eval_ms_per_outcome" in timing
+    assert isinstance(timing["eval_ms_total"], float)
+    assert timing["eval_ms_total"] >= 0.0

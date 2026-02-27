@@ -6,7 +6,7 @@
 
 ## 1. 优先级 P0（必须先做）
 
-## P0-1 修复 Variant 链路大小写不一致
+### P0-1 修复 Variant 链路大小写不一致
 
 **问题**
 
@@ -24,7 +24,7 @@
 
 ---
 
-## P0-2 增加“可关闭多样性过滤”开关
+### P0-2 增加“可关闭多样性过滤”开关
 
 **问题**
 
@@ -42,7 +42,7 @@
 
 ---
 
-## P0-3 将关键调参暴露到 run.py
+### P0-3 将关键调参暴露到 run.py
 
 **问题**
 
@@ -65,7 +65,7 @@
 
 ---
 
-## 已做的改动（代码）
+### P0 已做的改动（代码）
 
 - ✅ 已实现 P0-1（Variant 链路一致化）
   - `ExperimentRunner` 新增 variant 归一化逻辑，统一支持 `a/b/both/none`。
@@ -100,6 +100,69 @@
     - `tests/test_runner_p0.py` -> `test_runner_accepts_lowercase_variant_b_for_prompt_and_dedup`
     - `tests/test_runner_p0.py` -> `test_runner_disables_diversity_when_configured`
     - `tests/test_runner_p0.py` -> `test_runner_expands_lowercase_both_variants`
+
+---
+
+## 2. 优先级 P1（核心效果提升）
+
+### P1-1 OR-Library 感知 Probe
+
+**问题**
+
+- 当前 probe 仍是随机混合分布，和 OR-Library 的典型结构（u/t 类）有分布偏差。
+
+**改动项**
+
+- 在 `create_binpacking_probe_runner` 增加 `mode`：`random` / `orlib`。
+- `orlib` 模式可采用：
+  - 固定结构模板（近似 u/t 分布）；或
+  - 从 `data/orlib` 抽样构建 probe items。
+
+**验收标准**
+
+- 在相同代数下，`orlib` probe 的候选区分度提升（重复率下降或有效候选数上升）。
+
+---
+
+### P1-2 增加可选评分模式（增强优化信号）
+
+**问题**
+
+- 单一 `-avg_bins` 在强基线场景下，可能长期“全负值且不易分辨增益”。
+
+**改动项**
+
+- 增加 `score_mode`：
+  - `raw_bins`：`-avg_bins`（当前默认）
+  - `gap_to_lb`：`-(avg_bins - lower_bound_avg)`
+- 下界 `lower_bound` 先采用 `ceil(sum(items) / capacity)`。
+
+**验收标准**
+
+- 两种评分模式可通过配置切换。
+- 报告中能显示对应的 score 定义和关键中间量（如 `lower_bound_avg`）。
+
+---
+
+### P1-3 降低 full_eval 成本并加快反馈
+
+**问题**
+
+- OR-Library large 的 full_eval 计算重，影响每代迭代效率。
+
+**改动项**
+
+- 增加 `full_eval_every_n_generations`（例如每 2~3 代做一次 full_eval）。
+- 增加 `orlib_subset`（先在 small/subset 快速验证再上 large）。
+
+**验收标准**
+
+- 单次实验总耗时下降。
+- 早期代数能更快获得趋势反馈，不显著损失最终排名能力。
+
+---
+
+### P1 已做的改动（代码）
 
 - ✅ 已实现 P1-1（OR-Library 感知 Probe）
   - `create_binpacking_probe_runner` 支持 `mode=random/orlib` 和 `orlib_item_pool`。
@@ -136,68 +199,9 @@
 
 ---
 
-## 2. 优先级 P1（核心效果提升）
-
-## P1-1 OR-Library 感知 Probe
-
-**问题**
-
-- 当前 probe 仍是随机混合分布，和 OR-Library 的典型结构（u/t 类）有分布偏差。
-
-**改动项**
-
-- 在 `create_binpacking_probe_runner` 增加 `mode`：`random` / `orlib`。
-- `orlib` 模式可采用：
-  - 固定结构模板（近似 u/t 分布）；或
-  - 从 `data/orlib` 抽样构建 probe items。
-
-**验收标准**
-
-- 在相同代数下，`orlib` probe 的候选区分度提升（重复率下降或有效候选数上升）。
-
----
-
-## P1-2 增加可选评分模式（增强优化信号）
-
-**问题**
-
-- 单一 `-avg_bins` 在强基线场景下，可能长期“全负值且不易分辨增益”。
-
-**改动项**
-
-- 增加 `score_mode`：
-  - `raw_bins`：`-avg_bins`（当前默认）
-  - `gap_to_lb`：`-(avg_bins - lower_bound_avg)`
-- 下界 `lower_bound` 先采用 `ceil(sum(items) / capacity)`。
-
-**验收标准**
-
-- 两种评分模式可通过配置切换。
-- 报告中能显示对应的 score 定义和关键中间量（如 `lower_bound_avg`）。
-
----
-
-## P1-3 降低 full_eval 成本并加快反馈
-
-**问题**
-
-- OR-Library large 的 full_eval 计算重，影响每代迭代效率。
-
-**改动项**
-
-- 增加 `full_eval_every_n_generations`（例如每 2~3 代做一次 full_eval）。
-- 增加 `orlib_subset`（先在 small/subset 快速验证再上 large）。
-
-**验收标准**
-
-- 单次实验总耗时下降。
-- 早期代数能更快获得趋势反馈，不显著损失最终排名能力。
-
----
-
 ## 3. 优先级 P2（工程稳定性与可观测性）
 
-## P2-1 观测指标补齐
+### P2-1 观测指标补齐
 
 **新增指标建议**
 
@@ -211,7 +215,7 @@
 
 ---
 
-## P2-2 测试补齐
+### P2-2 测试补齐
 
 **新增测试建议**
 
@@ -226,7 +230,7 @@
 
 ---
 
-## P2-3 文档一致性修复
+### P2-3 文档一致性修复
 
 **问题**
 
@@ -239,6 +243,31 @@
 **验收标准**
 
 - 文档参数、命令、指标与代码一致，可直接复现实验。
+
+---
+
+### P2 已做的改动（代码）
+
+- ✅ 已实现 P2-1（观测指标补齐）
+  - generation 统计新增 candidate funnel、有效候选率与评估耗时指标。
+  - 报告新增 `Candidate Flow Funnel` 小节，直接展示瓶颈位置。
+  - 改动位置：
+    - `funsearch_core/loop.py` -> `FunSearchLoop.run_generation`
+    - `experiments/report.py` -> `ReportGenerator.generate_markdown`
+
+- ✅ 已实现 P2-2（测试补齐）
+  - 新增 loop 指标测试，验证 `funnel` / `effective_candidate_rate` / `timing` 字段。
+  - 报告生成测试新增 funnel 小节断言。
+  - 改动位置：
+    - `tests/test_funsearch_core.py` -> `test_funsearch_loop_emits_funnel_and_timing_metrics`
+    - `tests/test_report_generation.py` -> `test_report_generator_markdown`
+
+- ✅ 已实现 P2-3（文档一致性）
+  - 同步更新 `docs/METRICS.md` 到当前 `metrics.jsonl` 实际 schema。
+  - 同步更新 `docs/RUNNING_EXPERIMENTS.md`，补齐 P1/P2 参数与判读口径。
+  - 改动位置：
+    - `docs/METRICS.md`
+    - `docs/RUNNING_EXPERIMENTS.md`
 
 ---
 
@@ -264,26 +293,9 @@
 
 ---
 
-## 5. 补充问题
+## 5. 补充问题（未解决）
 
-## S1. A/B 变体链路一致性风险
-
-**问题**
-
-- `CLI` 侧使用小写 variant（`a/b/both`），而部分执行逻辑使用大写分支判断，存在“配置已传入但策略未真正生效”的风险。
-
-**改动项**
-
-- 统一全链路 variant 枚举与大小写规范（建议统一小写）。
-- 在 `runner` 初始化时做一次标准化并打印生效值。
-
-**验收标准**
-
-- `--variant b` 时，Prompt 模板、probe seed 数量、产物命名三者一致切换。
-
----
-
-## S2. 候选行为特征计算重复开销
+### S2. 候选行为特征计算重复开销
 
 **问题**
 
@@ -300,16 +312,16 @@
 
 ---
 
-## S3. 运行状态判定口径风险（CLI 展示层）
+### S3. 运行状态判定口径（剩余收尾）
 
 **问题**
 
-- 当返回值为多变体汇总结构时，CLI 仍按单 run 的 `status` 读取，可能出现展示状态与真实完成状态不一致。
+- 目前已支持多变体汇总完成判定，但 CLI 仍未显式输出每个变体（`variant_a` / `variant_b`）的独立完成状态，排查时可见性不足。
 
 **改动项**
 
-- 区分单变体与多变体返回结构，分别做完成判定。
-- 输出每个变体独立状态与总体状态。
+- 保留现有“总体完成”判定逻辑。
+- 增加逐变体状态输出（`variant_a`、`variant_b`）与最终汇总状态。
 
 **验收标准**
 
@@ -317,19 +329,9 @@
 
 ---
 
-## S4. 缺少过滤链路归因指标
+### 已解决归档
 
-**问题**
-
-- 当前难以直接量化“去重拒绝 / 多样性拒绝 / 评估失败”各自占比，排障和调参效率受限。
-
-**改动项**
-
-- 增加每代过滤归因计数：`dedup_rejected`、`diversity_rejected`、`cheap_eval_failed`。
-- 在报告中新增“候选流转漏斗”视图（生成→通过去重→通过多样性→cheap成功→full成功）。
-
-**验收标准**
-
-- 任意一次实验结束后，可直接从报告中定位瓶颈阶段。
+- ✅ S1. A/B 变体链路一致性风险（已在 P0-1 落地）
+- ✅ S4. 缺少过滤链路归因指标（已在 P2-1 落地）
 
 ---

@@ -1,69 +1,72 @@
 # Running & Comparing Experiments
 
-This guide explains how to execute experiments using FunSearch-Lite and how to perform A/B testing to compare different strategies.
+本文档给出当前项目可复现的运行方式，以及 P1/P2 相关参数的建议用法。
 
-## Execution Methods
+## 1) 快速启动（推荐）
 
-### 1. The `run.py` Wrapper (Recommended)
-The `run.py` script provides a user-friendly interface for common experiment setups. It automatically handles `.env` loading and generates a temporary configuration.
+使用 `run.py`：
 
 ```bash
-# Basic run with default settings
-python run.py
-
-# Run on OR-Library large instances for 100 generations
-python run.py --dataset orlib --size large --generations 100
-
-# Demo mode (uses FakeProvider, no API key needed)
 python run.py --demo
+python run.py --dataset orlib --size large --generations 6 --population 15 --islands 3
 ```
 
-### 2. Direct CLI Usage
-For full control, use the `experiments.cli` module with a YAML configuration file.
+### 常用参数
+
+- 基础：`--dataset` `--size` `--generations` `--population` `--islands` `--seed`
+- LLM/探索：`--temperature` `--variant`
+- 去重/多样性：`--probe-num-items` `--probe-mode` `--diversity-min-distance` `--disable-diversity`
+- 多保真评估：`--top-k-full-eval` `--full-eval-every` `--orlib-subset`
+- 评分：`--score-mode raw_bins|gap_to_lb`
+- 运行模式：`--demo`（FakeProvider，不消耗 API）
+
+> 运行后会在 `artifacts/<run_id>/` 产出 `config.yaml`、`metrics.jsonl`、`report.md`、`report.html` 等文件。
+
+## 2) 直接 CLI 运行
 
 ```bash
-python -m experiments.cli run configs/binpacking_deepseek.yaml
+python -m experiments.cli run configs/binpacking_deepseek.yaml --variant b
 ```
 
-## A/B Testing
+可选值：`--variant a|b|both`（大小写不敏感）。
 
-FunSearch-Lite supports A/B testing via the `--variant` flag in the CLI. This allows you to run different versions of the algorithm (e.g., different prompts, selection strategies, or model configurations) and compare their performance.
+## 3) 报告与对比
 
-### Running Variants
-You can specify a variant name when running an experiment:
+生成报告：
 
 ```bash
-# Run variant A
-python -m experiments.cli run configs/binpacking.yaml --variant a
-
-# Run variant B
-python -m experiments.cli run configs/binpacking.yaml --variant b
+python -m experiments.cli report <run_id>
 ```
 
-The system will append the variant name to the `run_id` and store results in separate artifact directories:
-- `artifacts/binpacking_demo_001_variant_a/`
-- `artifacts/binpacking_demo_001_variant_b/`
-
-### Comparing Results
-After running both variants, you can compare their evolution curves:
-
-1.  **Visual Comparison**: Open the `plots/evolution.png` files from both artifact directories side-by-side.
-2.  **Metric Comparison**: Use the `metrics.csv` files to perform statistical analysis (e.g., comparing the final best scores or the rate of convergence).
-3.  **Code Comparison**: Use `export-best` to see if the variants discovered different types of heuristic logic.
-
-## Resuming Experiments
-
-If an experiment is interrupted, you can resume it from the last saved checkpoint (if `save_interval` was configured):
+对比多个 run：
 
 ```bash
-python -m experiments.cli resume <run_id>
+python -m experiments.cli compare run_id_1 run_id_2 --artifact-dir artifacts --output-dir .
 ```
 
-*Note: Resume functionality is currently a placeholder and will be fully implemented in future versions.*
+## 4) 最小对照实验建议
 
-## Best Practices
+建议一次只改 1 个变量，避免结论混淆：
 
-1.  **Use Seeds**: Always specify a `seed` in your configuration to ensure reproducibility.
-2.  **Start Small**: Run a quick test with `--generations 5 --population 10` before committing to a long-running experiment.
-3.  **Monitor Real-time**: Use `tail -f artifacts/<run_id>/metrics.jsonl` to watch the progress.
-4.  **Check Failures**: If the `n_failed` count is high, inspect the `candidates.db` to understand why the LLM is generating invalid code.
+1. `enable_diversity`: on/off（通过 `--disable-diversity` 反转）
+2. `temperature`: 1.0 vs 1.3
+3. `probe_mode`: `random` vs `orlib`
+4. `score_mode`: `raw_bins` vs `gap_to_lb`
+
+每组建议至少 2 个不同 `seed` 重复。
+
+## 5) 结果判读（P2）
+
+优先看 `report.md` 的 `Candidate Flow Funnel`：
+
+- `generated -> dedup_rejected`：同质化是否严重
+- `after_dedup -> cheap_eval_passed`：候选可执行性/有效性
+- `effective_candidate_rate`：本代有效候选产出效率
+- `timing.eval_ms_total`：单代评估耗时
+
+若 `effective_candidate_rate` 长期偏低，可按顺序尝试：
+
+1. 提高 `temperature`
+2. 切换 `variant`（如 `b`）
+3. 调整 `probe_mode` 与 `probe_num_items`
+4. 降低 `diversity_min_distance`（并做对照）

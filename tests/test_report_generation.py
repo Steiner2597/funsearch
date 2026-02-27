@@ -33,7 +33,19 @@ def mock_experiment_data(tmp_path):
             },
             "overall": {"count": 40, "best_score": 15.0, "avg_score": 10.5},
             "dedup_skipped": 10,
-            "dedup_skipped_total": 15
+            "dedup_skipped_total": 15,
+            "funnel": {
+                "generated": 20,
+                "dedup_rejected": 4,
+                "after_dedup": 16,
+                "diversity_rejected": 2,
+                "cheap_eval_failed": 1,
+                "cheap_eval_passed": 15,
+                "full_eval_attempted": 3,
+                "full_eval_failed": 0,
+                "full_eval_passed": 3,
+                "effective_candidate_rate": 0.75
+            }
         }
     ]
     with open(metrics_path, "w") as f:
@@ -76,6 +88,7 @@ def test_report_generator_markdown(mock_experiment_data, tmp_path):
     assert "## Evolution Analysis" in content
     assert "## Per-Island Performance" in content
     assert "## Deduplication Statistics" in content
+    assert "## Candidate Flow Funnel" in content
     assert "## Configuration" in content
 
 def test_report_generator_html(mock_experiment_data, tmp_path):

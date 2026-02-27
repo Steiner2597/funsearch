@@ -225,6 +225,15 @@ class FunSearchLoop:
     def run_generation(self) -> dict[str, object]:
         generation_index = self.generation
         gen_dedup_skipped = 0
+        gen_generated = 0
+        gen_diversity_rejected = 0
+        cheap_eval_failed = 0
+        cheap_eval_passed = 0
+        cheap_eval_attempted = 0
+        full_eval_attempted = 0
+        full_eval_failed = 0
+        full_eval_passed = 0
+        eval_runtime_ms_total = 0.0
         
         if hasattr(self.generator, 'reset_metrics'):
             self.generator.reset_metrics()
@@ -260,6 +269,7 @@ class FunSearchLoop:
                 island_index=island_index,
                 population=island.population,
             )
+            gen_generated += len(new_candidates)
             
             # Sample-efficient: Skip evaluation for functionally duplicate candidates
             if self.deduplicator:
@@ -278,7 +288,12 @@ class FunSearchLoop:
                 candidates_to_eval = new_candidates
             
             # Only evaluate non-duplicate candidates
-            _ = self._evaluate_candidates(candidates_to_eval, fidelity="cheap")
+            cheap_outcomes = self._evaluate_candidates(candidates_to_eval, fidelity="cheap")
+            cheap_eval_attempted += len(cheap_outcomes)
+            eval_runtime_ms_total += sum(outcome.runtime_ms or 0.0 for outcome in cheap_outcomes)
+            cheap_failed_count = sum(1 for outcome in cheap_outcomes if outcome.score is None)
+            cheap_eval_failed += cheap_failed_count
+            cheap_eval_passed += len(cheap_outcomes) - cheap_failed_count
             should_run_full_eval = (
                 self.full_eval_every_n_generations <= 1
                 or (generation_index + 1) % self.full_eval_every_n_generations == 0
@@ -288,11 +303,18 @@ class FunSearchLoop:
                     candidates_to_eval,
                     self.config.top_k_for_full_eval,
                 )
-                _ = self._evaluate_candidates(top_candidates, fidelity="full")
+                full_eval_attempted += len(top_candidates)
+                full_outcomes = self._evaluate_candidates(top_candidates, fidelity="full")
+                eval_runtime_ms_total += sum(outcome.runtime_ms or 0.0 for outcome in full_outcomes)
+                full_failed_count = sum(1 for outcome in full_outcomes if outcome.score is None)
+                full_eval_failed += full_failed_count
+                full_eval_passed += len(full_outcomes) - full_failed_count
             
             # Add all candidates to population (including duplicates for tracking)
             for candidate in new_candidates:
-                _ = island.population.add_candidate(candidate)
+                added = island.population.add_candidate(candidate)
+                if (not added) and (not candidate.eval_metadata.get("skipped_duplicate", False)):
+                    gen_diversity_rejected += 1
 
         if self.migration_interval > 0 and (generation_index + 1) % self.migration_interval == 0:
             _ = self.islands.migrate(self.migration_size)
@@ -302,6 +324,31 @@ class FunSearchLoop:
         
         stats["dedup"]["skipped"] = gen_dedup_skipped
         stats["dedup"]["skipped_total"] = self._dedup_skipped
+        stats["dedup_skipped"] = gen_dedup_skipped
+        stats["dedup_skipped_total"] = self._dedup_skipped
+
+        after_dedup = max(gen_generated - gen_dedup_skipped, 0)
+        effective_rate = (cheap_eval_passed / gen_generated) if gen_generated > 0 else 0.0
+        stats["funnel"] = {
+            "generated": gen_generated,
+            "dedup_rejected": gen_dedup_skipped,
+            "after_dedup": after_dedup,
+            "diversity_rejected": gen_diversity_rejected,
+            "cheap_eval_failed": cheap_eval_failed,
+            "cheap_eval_passed": cheap_eval_passed,
+            "full_eval_attempted": full_eval_attempted,
+            "full_eval_failed": full_eval_failed,
+            "full_eval_passed": full_eval_passed,
+            "effective_candidate_rate": effective_rate,
+        }
+        stats["effective_candidate_rate"] = effective_rate
+        stats["timing"]["eval_ms_total"] = eval_runtime_ms_total
+        stats["timing"]["eval_s_total"] = eval_runtime_ms_total / 1000.0
+        stats["timing"]["avg_eval_ms_per_outcome"] = (
+            eval_runtime_ms_total / (cheap_eval_attempted + full_eval_attempted)
+            if (cheap_eval_attempted + full_eval_attempted) > 0
+            else 0.0
+        )
         
         if hasattr(self.generator, 'get_metrics') and hasattr(self.refiner, 'get_metrics'):
             generator_metrics = self.generator.get_metrics()
