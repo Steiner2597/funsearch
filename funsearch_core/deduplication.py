@@ -232,6 +232,8 @@ class FunctionalDeduplicator:
 def create_binpacking_probe_runner(
     capacity: int = 100,
     num_items: int = 15,
+    mode: str = "random",
+    orlib_item_pool: Sequence[Sequence[int]] | None = None,
 ) -> Callable[[str, int], float]:
     """Create a probe runner for bin packing candidates.
     
@@ -242,6 +244,37 @@ def create_binpacking_probe_runner(
     will still have different signatures.
     """
     import random
+
+    probe_mode = mode.strip().lower()
+    if probe_mode not in {"random", "orlib"}:
+        probe_mode = "random"
+
+    pool: list[list[int]] = [list(items) for items in (orlib_item_pool or []) if items]
+
+    def _random_items(rng: random.Random, seed: int) -> list[int]:
+        if seed % 3 == 0:
+            return [rng.randint(10, capacity - 10) for _ in range(num_items)]
+        if seed % 3 == 1:
+            return [rng.randint(1, capacity // 3) for _ in range(num_items)]
+        return [rng.choice([rng.randint(5, 25), rng.randint(40, 80)]) for _ in range(num_items)]
+
+    def _orlib_style_items(rng: random.Random, seed: int) -> list[int]:
+        if pool:
+            base_items = list(pool[seed % len(pool)])
+            if len(base_items) >= num_items:
+                return base_items[:num_items]
+            repeats = (num_items + len(base_items) - 1) // len(base_items)
+            return (base_items * repeats)[:num_items]
+
+        if seed % 4 == 0:
+            return [rng.randint(20, capacity) for _ in range(num_items)]
+        if seed % 4 == 1:
+            return [rng.randint(1, capacity) for _ in range(num_items)]
+        if seed % 4 == 2:
+            center = max(3, capacity // 3)
+            return [max(1, min(capacity, int(rng.gauss(center, max(2, center * 0.08))))) for _ in range(num_items)]
+        center = max(3, capacity // 2)
+        return [max(1, min(capacity, int(rng.gauss(center, max(2, center * 0.12))))) for _ in range(num_items)]
     
     def probe_runner(code: str, seed: int) -> float:
         """Run candidate code on a probe instance and return behavior fingerprint.
@@ -252,14 +285,10 @@ def create_binpacking_probe_runner(
         # Generate a deterministic instance with varied item sizes
         rng = random.Random(seed)
         
-        # Use different distributions based on seed
-        if seed % 3 == 0:
-            items = [rng.randint(10, capacity - 10) for _ in range(num_items)]
-        elif seed % 3 == 1:
-            items = [rng.randint(1, capacity // 3) for _ in range(num_items)]
+        if probe_mode == "orlib":
+            items = _orlib_style_items(rng, seed)
         else:
-            items = [rng.choice([rng.randint(5, 25), rng.randint(40, 80)]) 
-                     for _ in range(num_items)]
+            items = _random_items(rng, seed)
         
         # Create the score_bin function from code
         namespace: dict[str, object] = {"math": __import__("math")}

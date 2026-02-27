@@ -238,6 +238,26 @@ def score_bin(item_size, remaining_capacity, bin_index, step):
         # The heuristics should generally differ on packing performance
         # but this can be flaky so we only test they both work
 
+    def test_orlib_probe_mode_works_with_item_pool(self) -> None:
+        runner = create_binpacking_probe_runner(
+            capacity=100,
+            num_items=12,
+            mode="orlib",
+            orlib_item_pool=[
+                [100, 98, 95, 90, 87, 80],
+                [34, 33, 33, 34, 33, 33, 34, 33],
+            ],
+        )
+
+        code = """
+def score_bin(item_size, remaining_capacity, bin_index, step):
+    return remaining_capacity - item_size
+"""
+        result = runner(code, seed=7)
+        import math
+        assert isinstance(result, float)
+        assert not math.isnan(result)
+
 
 class TestIntegrationWithDeduplicator:
     """Integration test: FunctionalDeduplicator with bin packing probe."""

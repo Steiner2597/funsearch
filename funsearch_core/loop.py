@@ -171,6 +171,7 @@ class FunSearchLoop:
         default_temperature: float = 1.0,
         migration_interval: int = 0,
         migration_size: int = 1,
+        full_eval_every_n_generations: int = 1,
     ) -> None:
         if fresh_fraction < 0 or fresh_fraction > 1:
             raise ValueError("fresh_fraction must be between 0 and 1")
@@ -187,6 +188,7 @@ class FunSearchLoop:
         self.default_temperature: float = default_temperature
         self.migration_interval: int = migration_interval
         self.migration_size: int = migration_size
+        self.full_eval_every_n_generations: int = max(1, int(full_eval_every_n_generations))
         self.rng: random.Random = rng or random.Random(config.seed)
         self._candidate_counter: itertools.count[int] = itertools.count()
         self.generation: int = 0
@@ -277,11 +279,16 @@ class FunSearchLoop:
             
             # Only evaluate non-duplicate candidates
             _ = self._evaluate_candidates(candidates_to_eval, fidelity="cheap")
-            top_candidates = self._select_top_k(
-                candidates_to_eval,
-                self.config.top_k_for_full_eval,
+            should_run_full_eval = (
+                self.full_eval_every_n_generations <= 1
+                or (generation_index + 1) % self.full_eval_every_n_generations == 0
             )
-            _ = self._evaluate_candidates(top_candidates, fidelity="full")
+            if should_run_full_eval:
+                top_candidates = self._select_top_k(
+                    candidates_to_eval,
+                    self.config.top_k_for_full_eval,
+                )
+                _ = self._evaluate_candidates(top_candidates, fidelity="full")
             
             # Add all candidates to population (including duplicates for tracking)
             for candidate in new_candidates:

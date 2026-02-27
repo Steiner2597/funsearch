@@ -120,9 +120,28 @@ def first_fit_decreasing(items: list[int], capacity: int) -> int:
 class BinPackingEvaluator(BaseEvaluator):
     """Multi-fidelity evaluator for bin packing candidates."""
 
-    def __init__(self, seed: int, capacity: int = DEFAULT_CAPACITY) -> None:
+    def __init__(
+        self,
+        seed: int,
+        capacity: int = DEFAULT_CAPACITY,
+        score_mode: str = "raw_bins",
+    ) -> None:
         super().__init__(seed)
         self.capacity: int = capacity
+        self.score_mode: str = score_mode.strip().lower()
+        if self.score_mode not in {"raw_bins", "gap_to_lb"}:
+            self.score_mode = "raw_bins"
+
+    def _compute_score(self, instance_bins: list[int], instances: list[BinPackingInstance]) -> tuple[float, float]:
+        avg_bins = sum(instance_bins) / len(instance_bins)
+        lower_bounds = [
+            (sum(items) + self.capacity - 1) // self.capacity
+            for items in instances
+        ]
+        avg_lower_bound = sum(lower_bounds) / len(lower_bounds)
+        if self.score_mode == "gap_to_lb":
+            return -(avg_bins - avg_lower_bound), avg_lower_bound
+        return -avg_bins, avg_lower_bound
 
     def cheap_eval(self, candidate: Candidate) -> EvalResult:  # pyright: ignore[reportImplicitOverride]
         return self._evaluate(
@@ -177,7 +196,7 @@ class BinPackingEvaluator(BaseEvaluator):
         avg_bins = sum(instance_bins) / len(instance_bins)
         avg_baseline = sum(baseline_bins) / len(baseline_bins)
         total_saved = sum(b - c for b, c in zip(baseline_bins, instance_bins))
-        score = -avg_bins
+        score, avg_lower_bound = self._compute_score(instance_bins, instances)
         return EvalResult(
             score=score,  # Fewer bins => higher score (less negative)
             n_instances=len(instance_bins),
@@ -188,6 +207,8 @@ class BinPackingEvaluator(BaseEvaluator):
                 "n_instances": len(instance_bins),
                 "avg_bins": avg_bins,
                 "avg_baseline": avg_baseline,
+                "avg_lower_bound": avg_lower_bound,
+                "score_mode": self.score_mode,
                 "total_saved": total_saved,
             },
         )
@@ -212,6 +233,7 @@ class BenchmarkEvaluator(BaseEvaluator):
         dataset: "BinPackingDataset",
         cheap_sample_size: int = 5,
         seed: int = 42,
+        score_mode: str = "raw_bins",
     ) -> None:
         """Initialize with a benchmark dataset.
         
@@ -224,6 +246,20 @@ class BenchmarkEvaluator(BaseEvaluator):
         self.dataset = dataset
         self.cheap_sample_size = min(cheap_sample_size, len(dataset))
         self._rng = random.Random(seed)
+        self.score_mode: str = score_mode.strip().lower()
+        if self.score_mode not in {"raw_bins", "gap_to_lb"}:
+            self.score_mode = "raw_bins"
+
+    def _compute_score(self, candidate_bins: list[int], instances: list["DatasetInstance"]) -> tuple[float, float]:
+        avg_bins = sum(candidate_bins) / len(candidate_bins)
+        lower_bounds = [
+            (sum(inst.items) + inst.capacity - 1) // inst.capacity
+            for inst in instances
+        ]
+        avg_lower_bound = sum(lower_bounds) / len(lower_bounds)
+        if self.score_mode == "gap_to_lb":
+            return -(avg_bins - avg_lower_bound), avg_lower_bound
+        return -avg_bins, avg_lower_bound
     
     def cheap_eval(self, candidate: Candidate) -> EvalResult:
         """Evaluate on a small random sample of instances."""
@@ -288,7 +324,7 @@ class BenchmarkEvaluator(BaseEvaluator):
         avg_bins = sum(candidate_bins) / len(candidate_bins)
         avg_baseline = sum(baseline_bins) / len(baseline_bins)
         avg_best_known = sum(best_known_bins) / len(best_known_bins)
-        score = -avg_bins
+        score, avg_lower_bound = self._compute_score(candidate_bins, instances)
         
         # Gap metrics
         total_gap = sum(c - b for c, b in zip(candidate_bins, best_known_bins))
@@ -308,6 +344,8 @@ class BenchmarkEvaluator(BaseEvaluator):
                 "dataset_name": self.dataset.name,
                 "avg_bins": avg_bins,
                 "avg_baseline": avg_baseline,
+                "avg_lower_bound": avg_lower_bound,
+                "score_mode": self.score_mode,
                 "best_known_avg": avg_best_known,
                 "total_gap_to_best": total_gap,
                 "total_saved": total_saved,

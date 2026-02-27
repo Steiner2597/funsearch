@@ -57,6 +57,12 @@ def create_temp_config(args) -> Path:
         evaluator_extra_lines.append(f"  diversity_min_distance: {args.diversity_min_distance}")
     if args.probe_num_items is not None:
         evaluator_extra_lines.append(f"  probe_num_items: {args.probe_num_items}")
+    if args.probe_mode != "auto":
+        evaluator_extra_lines.append(f'  probe_mode: "{args.probe_mode}"')
+    evaluator_extra_lines.append(f'  score_mode: "{args.score_mode}"')
+    evaluator_extra_lines.append(f"  full_eval_every_n_generations: {args.full_eval_every}")
+    if args.orlib_subset is not None:
+        evaluator_extra_lines.append(f"  orlib_subset: {args.orlib_subset}")
     evaluator_extra = "\n".join(evaluator_extra_lines)
     
     config_content = f"""run_id: "{run_id}"
@@ -121,6 +127,12 @@ def print_config(args, run_id):
     print(f"   温度:        {args.temperature}")
     print(f"   Variant:     {args.variant}")
     print(f"   Top-K Full:  {args.top_k_full_eval}")
+    print(f"   评分模式:    {args.score_mode}")
+    probe_mode_display = "auto(按数据集)" if args.probe_mode == "auto" else args.probe_mode
+    print(f"   Probe 模式:  {probe_mode_display}")
+    print(f"   FullEval频率:{args.full_eval_every}")
+    if args.orlib_subset is not None:
+        print(f"   ORLib子集:   {args.orlib_subset}")
     if args.diversity_min_distance is not None:
         print(f"   多样性阈值:  {args.diversity_min_distance}")
     if args.probe_num_items is not None:
@@ -219,6 +231,30 @@ def main():
         type=int,
         default=None,
         help="行为 probe 的物品数量 (默认: 按数据集自动)"
+    )
+    parser.add_argument(
+        "--probe-mode",
+        choices=["auto", "random", "orlib"],
+        default="auto",
+        help="行为 probe 模式 (默认: auto，按数据集自动选择)"
+    )
+    parser.add_argument(
+        "--score-mode",
+        choices=["raw_bins", "gap_to_lb"],
+        default="raw_bins",
+        help="评分模式 (默认: raw_bins)"
+    )
+    parser.add_argument(
+        "--full-eval-every",
+        type=int,
+        default=1,
+        help="每隔多少代执行一次 full eval (默认: 1)"
+    )
+    parser.add_argument(
+        "--orlib-subset",
+        type=int,
+        default=None,
+        help="OR-Library 子集大小（仅 orlib 数据集生效）"
     )
     parser.add_argument(
         "--top-k-full-eval",

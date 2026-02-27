@@ -101,6 +101,39 @@
     - `tests/test_runner_p0.py` -> `test_runner_disables_diversity_when_configured`
     - `tests/test_runner_p0.py` -> `test_runner_expands_lowercase_both_variants`
 
+- ✅ 已实现 P1-1（OR-Library 感知 Probe）
+  - `create_binpacking_probe_runner` 支持 `mode=random/orlib` 和 `orlib_item_pool`。
+  - `runner` 会在 orlib 场景优先使用 `probe_mode=orlib`，并从数据集抽样构建 probe 池。
+  - 改动位置：
+    - `funsearch_core/deduplication.py` -> `create_binpacking_probe_runner`
+    - `experiments/runner.py` -> `ExperimentRunner._initialize_loop`
+    - `tests/test_deduplication.py` -> `test_orlib_probe_mode_works_with_item_pool`
+
+- ✅ 已实现 P1-2（评分模式 `raw_bins/gap_to_lb`）
+  - 新增 `score_mode` 配置并接入 sandbox 与非 sandbox 评估器。
+  - 新增 `avg_lower_bound`、`score_mode` 指标写入 metadata。
+  - 改动位置：
+    - `experiments/runner.py` -> `_normalize_score_mode` / `_compute_score`
+    - `experiments/runner.py` -> `SandboxBinPackingEvaluator` / `SandboxBenchmarkEvaluator`
+    - `evaluator/bin_packing.py` -> `BinPackingEvaluator` / `BenchmarkEvaluator`
+    - `tests/test_runner_p1.py` -> `test_runner_p1_passes_score_mode_and_full_eval_cadence`
+
+- ✅ 已实现 P1-3（降低 full_eval 成本）
+  - 新增 `full_eval_every_n_generations`，支持按代数间隔执行 full_eval。
+  - 新增 `orlib_subset`，支持 OR-Library 子集评估加速。
+  - 改动位置：
+    - `funsearch_core/loop.py` -> `FunSearchLoop.__init__` / `run_generation`
+    - `experiments/runner.py` -> `ExperimentRunner._subset_orlib_dataset`
+    - `experiments/runner.py` -> `ExperimentRunner._initialize_evaluator` / `_initialize_loop`
+    - `tests/test_runner_p1.py` -> `test_funsearch_loop_full_eval_cadence`
+
+- ✅ `run.py` 已补齐 P1 参数入口
+  - 新增参数：`--probe-mode`、`--score-mode`、`--full-eval-every`、`--orlib-subset`。
+  - 改动位置：
+    - `run.py` -> `create_temp_config`
+    - `run.py` -> `print_config`
+    - `run.py` -> `main`（argparse 参数定义）
+
 ---
 
 ## 2. 优先级 P1（核心效果提升）

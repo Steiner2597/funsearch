@@ -38,6 +38,30 @@ def get_sandbox_executor(memory_limit_mb: int = 256) -> SandboxExecutor:
     return _sandbox_executor
 
 
+def _normalize_score_mode(value: Any) -> str:
+    mode = str(value).strip().lower() if value is not None else "raw_bins"
+    if mode not in {"raw_bins", "gap_to_lb"}:
+        return "raw_bins"
+    return mode
+
+
+def _lower_bound(items: list[int], capacity: int) -> int:
+    return (sum(items) + capacity - 1) // capacity
+
+
+def _compute_score(
+    *,
+    score_mode: str,
+    instance_bins: list[int],
+    instances: list[dict[str, Any]],
+) -> tuple[float, float]:
+    avg_bins = sum(instance_bins) / len(instance_bins)
+    avg_lower_bound = sum(_lower_bound(inst["items"], inst["capacity"]) for inst in instances) / len(instances)
+    if score_mode == "gap_to_lb":
+        return -(avg_bins - avg_lower_bound), avg_lower_bound
+    return -avg_bins, avg_lower_bound
+
+
 class LLMProviderAdapter:
     """Adapts BaseLLMProvider to FunSearchLoop's LLMProvider protocol."""
     
@@ -191,6 +215,7 @@ class SandboxBinPackingEvaluator:
         full_instances: int = 10,
         memory_limit_mb: int = 256,
         batch_timeout_s: float = 30.0,
+        score_mode: str = "raw_bins",
     ):
         self.capacity = capacity
         self.seed = seed
@@ -198,6 +223,7 @@ class SandboxBinPackingEvaluator:
         self.full_instances = full_instances
         self.batch_timeout = batch_timeout_s
         self._executor = get_sandbox_executor(memory_limit_mb)
+        self.score_mode = _normalize_score_mode(score_mode)
     
     def _generate_instances(
         self,
@@ -249,7 +275,11 @@ class SandboxBinPackingEvaluator:
         total_saved = sum(b - c for b, c in zip(baseline_bins, instance_bins))
         avg_bins = sum(instance_bins) / len(instance_bins)
         avg_baseline = sum(baseline_bins) / len(baseline_bins)
-        score = -avg_bins
+        score, avg_lower_bound = _compute_score(
+            score_mode=self.score_mode,
+            instance_bins=instance_bins,
+            instances=instances,
+        )
         
         return {
             "score": score,
@@ -258,6 +288,8 @@ class SandboxBinPackingEvaluator:
                 "n_instances": len(instance_bins),
                 "instance_bins": instance_bins,
                 "avg_bins": avg_bins,
+                "avg_lower_bound": avg_lower_bound,
+                "score_mode": self.score_mode,
                 "baseline_score": total_saved,
                 "baseline_bins": baseline_bins,
                 "avg_baseline": avg_baseline,
@@ -296,6 +328,7 @@ class SandboxBenchmarkEvaluator:
         cheap_sample_size: int = 5,
         memory_limit_mb: int = 256,
         batch_timeout_s: float = 60.0,
+        score_mode: str = "raw_bins",
     ):
         self.dataset = dataset
         self.seed = seed
@@ -303,6 +336,7 @@ class SandboxBenchmarkEvaluator:
         self.batch_timeout = batch_timeout_s
         self._executor = get_sandbox_executor(memory_limit_mb)
         self._rng = __import__("random").Random(seed)
+        self.score_mode = _normalize_score_mode(score_mode)
     
     def _dataset_to_instances(self, dataset_instances: list[Any]) -> list[dict[str, Any]]:
         """Convert dataset instances to sandbox format."""
@@ -342,7 +376,11 @@ class SandboxBenchmarkEvaluator:
         total_saved = sum(b - c for b, c in zip(baseline_bins, instance_bins))
         avg_bins = sum(instance_bins) / len(instance_bins)
         avg_baseline = sum(baseline_bins) / len(baseline_bins)
-        score = -avg_bins
+        score, avg_lower_bound = _compute_score(
+            score_mode=self.score_mode,
+            instance_bins=instance_bins,
+            instances=instances,
+        )
         
         return {
             "score": score,
@@ -351,6 +389,8 @@ class SandboxBenchmarkEvaluator:
                 "n_instances": len(instance_bins),
                 "instance_bins": instance_bins,
                 "avg_bins": avg_bins,
+                "avg_lower_bound": avg_lower_bound,
+                "score_mode": self.score_mode,
                 "baseline_score": total_saved,
                 "baseline_bins": baseline_bins,
                 "avg_baseline": avg_baseline,
@@ -477,6 +517,40 @@ class ExperimentRunner:
             if lowered in {"0", "false", "no", "off"}:
                 return False
         return default
+
+    @staticmethod
+    def _coerce_int(value: Any, default: int) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+
+    def _subset_orlib_dataset(self, dataset: Any, subset_cfg: Any, seed: int) -> Any:
+        """Optionally reduce OR-Library dataset size for faster iteration."""
+        if subset_cfg is None:
+            return dataset
+
+        instances = list(dataset)
+        total = len(instances)
+        if total == 0:
+            return dataset
+
+        subset_count = total
+        if isinstance(subset_cfg, float):
+            if 0 < subset_cfg <= 1:
+                subset_count = max(1, int(round(total * subset_cfg)))
+        else:
+            subset_count = max(1, min(total, self._coerce_int(subset_cfg, total)))
+
+        if subset_count >= total:
+            return dataset
+
+        import random
+        rng = random.Random(seed)
+        picked = rng.sample(instances, subset_count)
+
+        from evaluator.datasets import BinPackingDataset
+        return BinPackingDataset(name=f"{dataset.name}_subset_{subset_count}", instances=picked)
     
     def _setup_signal_handlers(self) -> None:
         """Setup graceful shutdown on Ctrl+C."""
@@ -598,6 +672,8 @@ class ExperimentRunner:
             seed = self.config.evaluator.get("seed", self.config.seed)
             eval_type = self.config.evaluator.get("type", "random")
             eval_size = self.config.evaluator.get("size", "small")
+            score_mode = _normalize_score_mode(self.config.evaluator.get("score_mode", "raw_bins"))
+            subset_cfg = self.config.evaluator.get("orlib_subset")
             
             if use_sandbox:
                 # 使用沙箱批量评估器 (快速且安全)
@@ -610,12 +686,16 @@ class ExperimentRunner:
                     else:
                         dataset = load_orlib_small()
                         print(f"   📊 Using OR-Library SMALL dataset ({len(dataset)} instances)")
+                    dataset = self._subset_orlib_dataset(dataset, subset_cfg, seed)
+                    if subset_cfg is not None:
+                        print(f"   ✂️  OR-Library subset enabled ({len(dataset)} instances)")
                     
                     return SandboxBenchmarkEvaluator(
                         dataset=dataset,
                         seed=seed,
                         memory_limit_mb=self.config.sandbox_memory_limit_mb,
                         batch_timeout_s=self.config.batch_timeout_s,
+                        score_mode=score_mode,
                     )
                 else:
                     if eval_size == "large":
@@ -628,6 +708,7 @@ class ExperimentRunner:
                         seed=seed,
                         memory_limit_mb=self.config.sandbox_memory_limit_mb,
                         batch_timeout_s=self.config.batch_timeout_s,
+                        score_mode=score_mode,
                     )
             else:
                 # 使用直接执行评估器 (快速但不安全)
@@ -642,15 +723,18 @@ class ExperimentRunner:
                     else:
                         dataset = load_orlib_small()
                         print(f"   📊 Using OR-Library SMALL dataset ({len(dataset)} instances)")
+                    dataset = self._subset_orlib_dataset(dataset, subset_cfg, seed)
+                    if subset_cfg is not None:
+                        print(f"   ✂️  OR-Library subset enabled ({len(dataset)} instances)")
                     
-                    base_evaluator = BenchmarkEvaluator(dataset=dataset, seed=seed)
+                    base_evaluator = BenchmarkEvaluator(dataset=dataset, seed=seed, score_mode=score_mode)
                 else:
                     if eval_size == "large":
                         print(f"   📊 Using RANDOM LARGE instances (20 instances, 100-200 items)")
                     else:
                         print(f"   📊 Using RANDOM SMALL instances (default)")
                     
-                    base_evaluator = BinPackingEvaluator(capacity=capacity, seed=seed)
+                    base_evaluator = BinPackingEvaluator(capacity=capacity, seed=seed, score_mode=score_mode)
                 
                 return EvaluatorAdapter(base_evaluator, use_sandbox=False)
         
@@ -681,7 +765,25 @@ class ExperimentRunner:
         eval_type = self.config.evaluator.get("type", "random")
         default_probe_items = 20 if eval_type == "orlib" else 8
         probe_num_items = self.config.evaluator.get("probe_num_items", default_probe_items)
-        probe_runner = create_binpacking_probe_runner(capacity=100, num_items=probe_num_items)
+        default_probe_mode = "orlib" if eval_type == "orlib" else "random"
+        probe_mode = str(self.config.evaluator.get("probe_mode", default_probe_mode)).strip().lower()
+        if probe_mode not in {"random", "orlib"}:
+            probe_mode = default_probe_mode
+
+        orlib_item_pool: list[list[int]] | None = None
+        if probe_mode == "orlib" and hasattr(evaluator, "dataset"):
+            raw_dataset = getattr(evaluator, "dataset")
+            sampled_instances = list(raw_dataset)[:16]
+            if sampled_instances:
+                orlib_item_pool = [sorted(inst.items, reverse=True) for inst in sampled_instances]
+
+        probe_runner = create_binpacking_probe_runner(
+            capacity=100,
+            num_items=probe_num_items,
+            mode=probe_mode,
+            orlib_item_pool=orlib_item_pool,
+        )
+        print(f"   🔎 Probe mode: {probe_mode} (items={probe_num_items})")
         
         signature_calculator = SignatureCalculator(probe_runner=probe_runner)
         selection_strategy = TournamentSelection(tournament_size=3)
@@ -710,6 +812,13 @@ class ExperimentRunner:
         
         if variant_mode == "b":
             print("   🎨 Variant B: Novelty prompting + enhanced diversity")
+
+        full_eval_every_n_generations = self._coerce_int(
+            self.config.evaluator.get("full_eval_every_n_generations", 1),
+            1,
+        )
+        if full_eval_every_n_generations > 1:
+            print(f"   ⚖️  Full eval cadence: every {full_eval_every_n_generations} generations")
         
         return FunSearchLoop(
             config=self.config,
@@ -721,6 +830,7 @@ class ExperimentRunner:
             diversity_maintainer=diversity_maintainer,
             deduplicator=deduplicator,  # 启用功能级去重
             store=store,
+            full_eval_every_n_generations=full_eval_every_n_generations,
         )
     
     def _run_loop(self, loop: FunSearchLoop) -> None:
