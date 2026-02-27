@@ -65,6 +65,44 @@
 
 ---
 
+## 已做的改动（代码）
+
+- ✅ 已实现 P0-1（Variant 链路一致化）
+  - `ExperimentRunner` 新增 variant 归一化逻辑，统一支持 `a/b/both/none`。
+  - 单变体运行时将配置中的 variant 与当前分支运行值保持一致。
+  - 改动位置：
+    - `experiments/runner.py` -> `ExperimentRunner.__init__`
+    - `experiments/runner.py` -> `ExperimentRunner._normalize_variant`
+    - `experiments/runner.py` -> `ExperimentRunner.run`
+    - `experiments/runner.py` -> `ExperimentRunner._run_single_variant`
+    - `experiments/runner.py` -> `ExperimentRunner._initialize_providers`
+    - `experiments/runner.py` -> `ExperimentRunner._initialize_loop`
+
+- ✅ 已实现 P0-2（可关闭多样性过滤）
+  - 新增 `evaluator.enable_diversity` 开关。
+  - 关闭时不实例化 `DiversityMaintainer`，保留去重流程。
+  - 改动位置：
+    - `experiments/runner.py` -> `ExperimentRunner._coerce_bool`
+    - `experiments/runner.py` -> `ExperimentRunner._initialize_loop`
+
+- ✅ 已实现 P0-3（run.py 暴露关键参数）
+  - 新增参数：`--temperature`、`--variant`、`--diversity-min-distance`、`--probe-num-items`、`--top-k-full-eval`、`--disable-diversity`。
+  - 临时配置写入 `variant`、`top_k_for_full_eval`、`evaluator.enable_diversity` 及相关调参项。
+  - 改动位置：
+    - `run.py` -> `create_temp_config`
+    - `run.py` -> `print_config`
+    - `run.py` -> `main`（argparse 参数定义）
+    - `run.py` -> `main`（实验完成状态判定）
+
+- ✅ 配套回归测试已新增
+  - 新增测试覆盖：小写 variant 生效、`variant=both` 分支展开、diversity 开关行为。
+  - 改动位置：
+    - `tests/test_runner_p0.py` -> `test_runner_accepts_lowercase_variant_b_for_prompt_and_dedup`
+    - `tests/test_runner_p0.py` -> `test_runner_disables_diversity_when_configured`
+    - `tests/test_runner_p0.py` -> `test_runner_expands_lowercase_both_variants`
+
+---
+
 ## 2. 优先级 P1（核心效果提升）
 
 ## P1-1 OR-Library 感知 Probe

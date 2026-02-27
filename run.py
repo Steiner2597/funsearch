@@ -49,13 +49,23 @@ def create_temp_config(args) -> Path:
     
     # Demo 模式禁用沙箱以提高速度，正式运行启用沙箱以确保安全
     use_sandbox = "false" if args.demo else "true"
+    variant_line = "null" if args.variant == "none" else f'"{args.variant}"'
+    diversity_enabled = "false" if args.disable_diversity else "true"
+    evaluator_extra_lines = []
+    evaluator_extra_lines.append(f"  enable_diversity: {diversity_enabled}")
+    if args.diversity_min_distance is not None:
+        evaluator_extra_lines.append(f"  diversity_min_distance: {args.diversity_min_distance}")
+    if args.probe_num_items is not None:
+        evaluator_extra_lines.append(f"  probe_num_items: {args.probe_num_items}")
+    evaluator_extra = "\n".join(evaluator_extra_lines)
     
     config_content = f"""run_id: "{run_id}"
 seed: 42
 max_generations: {args.generations}
 population_size: {args.population}
 num_islands: {args.islands}
-top_k_for_full_eval: 5
+top_k_for_full_eval: {args.top_k_full_eval}
+variant: {variant_line}
 
 task_name: "bin_packing"
 
@@ -65,6 +75,7 @@ evaluator:
   capacity: 100
   seed: 42
   use_sandbox: {use_sandbox}
+{evaluator_extra}
 
 llm_providers:
   - provider_id: "main_provider"
@@ -73,7 +84,7 @@ llm_providers:
     {base_url}
     max_retries: 3
     timeout_seconds: 60
-    temperature: 1.0
+    temperature: {args.temperature}
     max_tokens: 2000
 
 generator_provider_id: "main_provider"
@@ -107,6 +118,14 @@ def print_config(args, run_id):
     print(f"   代数:        {args.generations}")
     print(f"   种群大小:    {args.population}")
     print(f"   岛屿数:      {args.islands}")
+    print(f"   温度:        {args.temperature}")
+    print(f"   Variant:     {args.variant}")
+    print(f"   Top-K Full:  {args.top_k_full_eval}")
+    if args.diversity_min_distance is not None:
+        print(f"   多样性阈值:  {args.diversity_min_distance}")
+    if args.probe_num_items is not None:
+        print(f"   Probe 数量:  {args.probe_num_items}")
+    print(f"   多样性过滤:  {'关闭' if args.disable_diversity else '开启'}")
     
     if args.demo:
         print("   模式:        演示 (FakeProvider)")
@@ -176,6 +195,41 @@ def main():
         type=int,
         default=3,
         help="岛屿数量 (默认: 3)"
+    )
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        default=1.0,
+        help="LLM 采样温度 (默认: 1.0)"
+    )
+    parser.add_argument(
+        "--variant",
+        choices=["none", "a", "b", "both"],
+        default="none",
+        help="实验变体: none/a/b/both (默认: none)"
+    )
+    parser.add_argument(
+        "--diversity-min-distance",
+        type=float,
+        default=None,
+        help="多样性最小距离阈值 (默认: 按数据集自动)"
+    )
+    parser.add_argument(
+        "--probe-num-items",
+        type=int,
+        default=None,
+        help="行为 probe 的物品数量 (默认: 按数据集自动)"
+    )
+    parser.add_argument(
+        "--top-k-full-eval",
+        type=int,
+        default=5,
+        help="每代进入 full_eval 的候选数 (默认: 5)"
+    )
+    parser.add_argument(
+        "--disable-diversity",
+        action="store_true",
+        help="关闭 DiversityMaintainer（用于对照实验）"
     )
     parser.add_argument(
         "--run-id", "-r",
@@ -248,7 +302,16 @@ def main():
         runner = ExperimentRunner(config)
         summary = runner.run()
         
-        if summary.get("status") == "completed":
+        completed = False
+        if isinstance(summary, dict) and "status" in summary:
+            completed = summary.get("status") == "completed"
+        elif isinstance(summary, dict) and summary:
+            completed = all(
+                isinstance(item, dict) and item.get("status") == "completed"
+                for item in summary.values()
+            )
+
+        if completed:
             print("\n✅ 实验成功完成!")
         else:
             print("\n⚠️  实验未完成")

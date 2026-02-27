@@ -445,11 +445,38 @@ class ExperimentRunner:
     
     def __init__(self, config: ExperimentConfig):
         self.config = config
-        self.variant = getattr(config, "variant", "both")
+        self.variant_mode = self._normalize_variant(getattr(config, "variant", None))
         self.artifacts: ArtifactManager | None = None
         self.interrupted = False
         
         self._setup_signal_handlers()
+
+    @staticmethod
+    def _normalize_variant(value: Any) -> str:
+        """Normalize variant input to one of: a, b, both, none."""
+        if value is None:
+            return "none"
+        normalized = str(value).strip().lower()
+        if normalized in {"a", "b", "both", "none"}:
+            return normalized
+        return "none"
+
+    @staticmethod
+    def _coerce_bool(value: Any, default: bool = True) -> bool:
+        """Coerce config values to bool safely."""
+        if value is None:
+            return default
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return bool(value)
+        if isinstance(value, str):
+            lowered = value.strip().lower()
+            if lowered in {"1", "true", "yes", "on"}:
+                return True
+            if lowered in {"0", "false", "no", "off"}:
+                return False
+        return default
     
     def _setup_signal_handlers(self) -> None:
         """Setup graceful shutdown on Ctrl+C."""
@@ -467,10 +494,12 @@ class ExperimentRunner:
             Summary dictionary with run statistics
         """
         variants_to_run = []
-        if self.variant == "both":
+        if self.variant_mode == "both":
             variants_to_run = ["A", "B"]
-        elif self.variant in ["A", "B"]:
-            variants_to_run = [self.variant]
+        elif self.variant_mode == "a":
+            variants_to_run = ["A"]
+        elif self.variant_mode == "b":
+            variants_to_run = ["B"]
         else:
             variants_to_run = [None]
         
@@ -498,6 +527,8 @@ class ExperimentRunner:
         Returns:
             Summary dictionary with run statistics
         """
+        original_variant = self.config.variant
+        self.config.variant = variant.lower() if variant else None
         try:
             self.artifacts = ArtifactManager(self.config, variant=variant)
             self.artifacts.snapshot_config()
@@ -527,15 +558,18 @@ class ExperimentRunner:
         except Exception as e:
             print(f"\n❌ Experiment failed: {e}")
             raise
+        finally:
+            self.config.variant = original_variant
     
     def _initialize_providers(self) -> dict[str, LLMProviderAdapter]:
         """Initialize LLM providers from config."""
         providers: dict[str, LLMProviderAdapter] = {}
         from llm.prompts import VariantType
         variant: VariantType | None = None
-        if self.config.variant == "A":
+        variant_mode = self._normalize_variant(getattr(self.config, "variant", None))
+        if variant_mode == "a":
             variant = "A"
-        elif self.config.variant == "B":
+        elif variant_mode == "b":
             variant = "B"
         prompt_template = get_prompt_template(variant)
         
@@ -651,15 +685,22 @@ class ExperimentRunner:
         
         signature_calculator = SignatureCalculator(probe_runner=probe_runner)
         selection_strategy = TournamentSelection(tournament_size=3)
-        default_min_distance = 0.05 if eval_type == "orlib" else 0.1
-        min_distance = self.config.evaluator.get("diversity_min_distance", default_min_distance)
-        diversity_maintainer = DiversityMaintainer(min_distance=min_distance)
+        enable_diversity = self._coerce_bool(self.config.evaluator.get("enable_diversity", True), default=True)
+        diversity_maintainer: DiversityMaintainer | None = None
+        if enable_diversity:
+            default_min_distance = 0.05 if eval_type == "orlib" else 0.1
+            min_distance = self.config.evaluator.get("diversity_min_distance", default_min_distance)
+            diversity_maintainer = DiversityMaintainer(min_distance=min_distance)
+            print(f"   🌈 Diversity: ENABLED (min_distance={min_distance})")
+        else:
+            print("   🌈 Diversity: DISABLED")
         
         # 创新点1: 功能级去重 (两阶段)
         # Stage 1: 代码规范化哈希 - 快速过滤文本相同的代码
         # Stage 2: 行为签名 - 检测功能等价的不同代码
         # Variant B uses more probe seeds for stronger diversity filtering
-        probe_count = 5 if self.config.variant == "B" else 3
+        variant_mode = self._normalize_variant(getattr(self.config, "variant", None))
+        probe_count = 5 if variant_mode == "b" else 3
         deduplicator = FunctionalDeduplicator(
             probe_runner=probe_runner,
             probe_seeds=list(range(probe_count)),
@@ -667,7 +708,7 @@ class ExperimentRunner:
             use_code_hash=True,
         )
         
-        if self.config.variant == "B":
+        if variant_mode == "b":
             print("   🎨 Variant B: Novelty prompting + enhanced diversity")
         
         return FunSearchLoop(
